@@ -1,0 +1,17 @@
+# 镜像里不需要的东西，顺便防止 .env 等机密被打进镜像
+**/.env
+**/.env.*
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.log
+.git/
+.github/
+docs/
+vapi/
+terminals/
+**/.DS_Store
+README.md

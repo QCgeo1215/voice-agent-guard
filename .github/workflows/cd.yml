@@ -1,0 +1,50 @@
+name: CD
+
+# 推到 main 时：跑测试 → 构建镜像 → 推 ECR。
+# App Runner 对该 ECR 仓库开启「自动部署」，拉到新的 :latest 即上线。
+# 需要在 GitHub 仓库 Secrets 配置：AWS_ROLE_ARN、AWS_REGION、ECR_REPOSITORY。
+# 详见 docs/deploy_aws.md。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC 免长期密钥
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test before deploy
+        run: pip install -r backend/requirements-dev.txt
+      - name: Run tests
+        working-directory: backend
+        run: pytest -q
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ secrets.ECR_REPOSITORY }}
+          SHA: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/$REPO:latest" -t "$REGISTRY/$REPO:$SHA" .
+          docker push "$REGISTRY/$REPO:latest"
+          docker push "$REGISTRY/$REPO:$SHA"
