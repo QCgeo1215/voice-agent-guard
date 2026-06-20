@@ -13,10 +13,11 @@
 ## 候选方案
 
 ### 计算服务
-1. **AWS App Runner（本次采用）**：托管容器服务，给镜像/源码即自动构建、自动 HTTPS、固定域名、按需缩放。最贴近「serverless 容器」，运维最少。
-2. **ECS Fargate + ALB**：更可控，但要自己配 ALB / target group / 证书，配置量大。
-3. **Lambda + API Gateway**：最「serverless」，但 FastAPI 要包 Mangum、长连接/启动冷启动/二进制依赖（psycopg）都更麻烦，等于重写部署形态。
-4. **EC2**：最灵活但要自己管机器、进程、证书，违背少运维目标。
+1. ~~**AWS App Runner（原计划）**~~：托管容器服务，最贴近「serverless 容器」。**但 2026-04-30 起不再接受新客户**，本项目新账号建不了，已放弃。
+2. **Amazon ECS Express Mode（实际采用）**：AWS 官方指定的 App Runner 继任者。给 ECR 镜像 + 两个 IAM 角色，自动建 Fargate + ALB + HTTPS + 自动扩缩，无额外费用，运维同样少；完整复用我们的 ECR 镜像与 CI/CD。
+3. **ECS Fargate（标准）+ ALB**：更可控，但要自己配 ALB / target group / 证书，配置量大；Express 本质是它的简化封装。
+4. **Lambda + API Gateway**：最「serverless」，但 FastAPI 要包 Mangum、冷启动/二进制依赖（psycopg）更麻烦，等于重写部署形态。
+5. **EC2**：最灵活但要自己管机器、进程、证书，违背少运维目标。
 
 ### 数据库
 1. **Neon PostgreSQL（本次采用）**：Serverless Postgres，免费额度够 demo，只要一个 `DATABASE_URL`，几分钟开通，自带连接池端点。
@@ -28,7 +29,18 @@
 2. **GitHub Actions → 构建镜像 → 推 ECR → App Runner 自动部署（本次采用）**：CI（pytest）+ CD（build/push）一条龙，复用 Dockerfile，最能体现 CI/CD 加分；App Runner 对 ECR 仓库开「自动部署」，推 `:latest` 即上线。
 
 ## 最终选择
-**App Runner（计算）+ Neon PostgreSQL（数据）+ GitHub Actions（CI/CD，OIDC 推 ECR，App Runner 自动部署）。**
+**Amazon ECS Express Mode（计算）+ Neon PostgreSQL（数据）+ GitHub Actions（CI/CD，OIDC 推 ECR）。**
+
+> 迭代记录（6/20）：原计划用 App Runner，落地时发现它 2026-04-30 起停止接收新客户、新账号按钮置灰。
+> 改用 AWS 官方继任者 ECS Express Mode——输入相同（ECR 镜像 + 端口 + 健康检查 + 环境变量），
+> 仅「自动跟随 ECR latest」这一点需用 force new deployment 或额外 GitHub Action 补上。这正是「持续迭代 / 方案随约束变化」的实例。
+>
+> 迭代记录二（6/20 晚）：补齐 CD 最后一公里。`cd.yml` 末尾接官方 `aws-actions/amazon-ecs-deploy-express-service@v1`，
+> push → 测试 → 推 ECR → **自动部署 Express 服务**，不再手动 force new deployment。
+> 关键约束：该 Action 是声明式（每次按 workflow 重建 task definition），所以**全部运行时环境变量须配进 GitHub**（Secrets/Variables），
+> 否则部署会清空控制台手填的值；并需给 OIDC 角色加 ECS Express 内联策略（`*ExpressGatewayService` + `iam:PassRole`）。
+> 容器端口 `8080`、健康检查 `/health` 必须在 Action 入参里显式指定（其默认是 80 / `/ping`，否则判不健康）。
+> 取舍：手动只需点一下、零风险；全自动一次性配置成本更高、且会接管线上环境变量，但换来 push 即上线、配置集中在 GitHub 一处。本项目选全自动以做满 CI/CD 加分。
 
 代码侧改动（本轮已完成，未依赖 AWS 账号即可验证）：
 - `config.py` 增 `DATABASE_URL` 开关：留空走本地 SQLite，填 `postgres://...` 走 Postgres。

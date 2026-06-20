@@ -1,8 +1,26 @@
 name: CD
 
-# 推到 main 时：跑测试 → 构建镜像 → 推 ECR。
-# App Runner 对该 ECR 仓库开启「自动部署」，拉到新的 :latest 即上线。
-# 需要在 GitHub 仓库 Secrets 配置：AWS_ROLE_ARN、AWS_REGION、ECR_REPOSITORY。
+# 推到 main 时：跑测试 → 构建镜像推 ECR → 用官方 Action 部署到 ECS Express Mode。
+# 全自动：push 即上线，无需再去控制台手动 force new deployment。
+#
+# 需要在 GitHub 仓库配置（Settings → Secrets and variables → Actions）：
+#   Secrets（敏感）：
+#     AWS_ROLE_ARN          OIDC 角色（已存在；需加 ECS Express 权限，见 docs/deploy_aws.md）
+#     AWS_REGION            ap-southeast-1
+#     ECR_REPOSITORY        voice-agent
+#     DATABASE_URL          Neon Postgres 连接串
+#     SERVERCHAN_SENDKEY    Server酱 SendKey
+#     LLM_API_KEY           门卫查询/公司重排用的 LLM key
+#     VAPI_PUBLIC_KEY       手机端 /call 页用
+#   Variables（非敏感）：
+#     ECS_SERVICE           ECS Express 服务名（如 voice-agent-746c）
+#     ECS_CLUSTER           ECS 集群名（在 ECS 控制台查；常为 default）
+#     ECS_EXECUTION_ROLE_ARN   arn:aws:iam::<acct>:role/ecsTaskExecutionRole
+#     ECS_INFRA_ROLE_ARN       arn:aws:iam::<acct>:role/ecsInfrastructureRoleForExpressServices
+#     LLM_BASE_URL          如 https://api.openai.com/v1
+#     LLM_MODEL             如 gpt-4o
+#     VAPI_ASSISTANT_ID     Vapi Assistant ID
+#     SERVERCHAN_API_BASE   （可选）默认 https://sctapi.ftqq.com
 # 详见 docs/deploy_aws.md。
 
 on:
@@ -48,3 +66,48 @@ jobs:
           docker build -t "$REGISTRY/$REPO:latest" -t "$REGISTRY/$REPO:$SHA" .
           docker push "$REGISTRY/$REPO:latest"
           docker push "$REGISTRY/$REPO:$SHA"
+
+      # 把运行时环境变量拼成 ECS 要的 JSON 数组；只注入非空项，避免漏配把已有值清空。
+      - name: Build container env JSON
+        id: envjson
+        env:
+          APP_ENV: production
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NOTIFIER_PROVIDER: serverchan
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          SERVERCHAN_API_BASE: ${{ vars.SERVERCHAN_API_BASE || 'https://sctapi.ftqq.com' }}
+          NOTIFY_TIMEOUT_SECONDS: "8"
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_TIMEOUT_SECONDS: "12"
+          COMPANY_RESOLVE_USE_LLM: "false"
+          COMPANY_RESOLVE_LLM_TIMEOUT_SECONDS: "1.8"
+          VAPI_PUBLIC_KEY: ${{ secrets.VAPI_PUBLIC_KEY }}
+          VAPI_ASSISTANT_ID: ${{ vars.VAPI_ASSISTANT_ID }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          keys = [
+              "APP_ENV", "DATABASE_URL", "NOTIFIER_PROVIDER", "SERVERCHAN_SENDKEY",
+              "SERVERCHAN_API_BASE", "NOTIFY_TIMEOUT_SECONDS", "LLM_API_KEY",
+              "LLM_BASE_URL", "LLM_MODEL", "LLM_TIMEOUT_SECONDS",
+              "COMPANY_RESOLVE_USE_LLM", "COMPANY_RESOLVE_LLM_TIMEOUT_SECONDS",
+              "VAPI_PUBLIC_KEY", "VAPI_ASSISTANT_ID",
+          ]
+          arr = [{"name": k, "value": os.environ[k]} for k in keys if os.environ.get(k)]
+          print("json=" + json.dumps(arr, ensure_ascii=False))
+          PY
+
+      - name: Deploy to ECS Express Mode
+        uses: aws-actions/amazon-ecs-deploy-express-service@v1
+        with:
+          service-name: ${{ vars.ECS_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          image: ${{ steps.ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+          execution-role-arn: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+          infrastructure-role-arn: ${{ vars.ECS_INFRA_ROLE_ARN }}
+          # 关键：容器监听 8080、健康检查走 /health（否则 ALB 判不健康，服务起不来）
+          container-port: "8080"
+          health-check-path: /health
+          environment-variables: ${{ steps.envjson.outputs.json }}

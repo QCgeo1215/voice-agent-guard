@@ -210,18 +210,56 @@
 
 待用户操作（需 AWS 账号，见 `docs/deploy_aws.md`）：建 Neon 库、建 ECR、建 GitHub OIDC 角色、配 3 个 Secret、push、建 App Runner 服务并注入环境变量、把 Vapi 工具 URL 换成固定域名。
 
+## 6/20 下午补充（AWS 正式上线 + App Runner→ECS Express 迭代）
+当天把云部署从代码侧推到真上线，过程中踩到一个外部变动并完成迭代：
+
+- **App Runner 停止接新客户**：6/20 建服务时发现 App Runner 自 2026-04-30 起不再接受新账号（按钮置灰）。改用 AWS 官方继任者 **Amazon ECS Express Mode**（输入相同：ECR 镜像 + 端口 + 健康检查 + 环境变量；自动建 Fargate + ALB + HTTPS + 自动扩缩）。已同步更新决策 010 与 `docs/deploy_aws.md`。
+- **完整链路已建成并上线**：
+  - GitHub 仓库 `QCgeo1215/voice-agent-guard`（Private）+ OIDC 角色 + 3 个 Secret。
+  - CI 绿（含真 Postgres service 跑同一套测试 → 验证了本机连不上、之前没法测的 Postgres 适配层）。
+  - CD 绿：构建镜像推 ECR。
+  - ECS Express 服务 `voice-agent-746c` 运行中，Neon Postgres 作数据层。
+- **固定公网地址**（取代 cloudflared）：
+  `https://vo-dc486323624a436eb4cf8b9f000737d7.ecs.ap-southeast-1.on.aws`
+- **线上端到端自测**（curl 经 --resolve 绕过校园 DNS 负缓存）：
+  - `GET /health` → 200。
+  - `POST /register_visitor`（蓝鲸科技→蓝色鲸鱼科技）→ success，Neon 写库 + Server酱真实微信推送 `SUCCESS`；后端 `elapsed_ms≈1778`、`push_elapsed_ms≈1596`。
+- **已知小问题**：NUS 校园 DNS 对新域名有负缓存，本机/浏览器需等 TTL 过期或换手机流量；域名公网已生效（DoH 可解析）。
+- **待办**：Vapi 两个工具 URL 改指固定域名（路径不变）；手机流量真机过一遍；之后更新部署用 force new deployment 或给 `cd.yml` 加 ECS 部署 Action。
+
+## 6/20 晚补充（Vapi 中文音色优化 + 车牌校验数据层）
+真机测试驱动的两处体验优化：
+
+- **Vapi 中文语音管线升级**（控制台侧，已 publish）：之前中文「一股外国味、偶尔蹦英文」。
+  - TTS：换成 **MiniMax Speech 2.5 中文音色**（Vapi humanness 榜中文最佳），外国味明显改善。
+  - STT：Deepgram **Nova-3 / Multilingual**。
+  - LLM：GPT-4.1；system prompt 顶部加「只说中文、禁止英文」硬约束（治蹦英文）。
+  - 单轮组件延迟 ~1,075ms，远在 25s 预算内。
+  - 教训：STT 一度选 Multilingual 导致中文听岔、反复追问；纯中文场景应锁中文/多语需验证。
+- **车牌校验数据层（决策 011）**：朋友抓到 badcase「苏E…」被 STT 反复听岔、复述确认纠了 ~3 轮。
+  - 厘清关键差异：公司是闭集（白名单当闸门、入库），**车牌是开集**（陌生访客随到随登，不能做准入闸门）。
+  - 新增 `backend/plate_registry.py`：31 省份简称闭集（国标常量、不入库）+ 近音纠错表 + `clean_plate`/`normalize_plate`；main.py 收编原内联 `_PLATE_RE`，回访查询也复用省份纠正。
+  - 职责对标 `company_registry.py`：后端做权威校验，prompt 不增长。
+  - 诚实边界：新访客数字串（声学开集）仍靠复述确认兜底；历史车牌纠错暂不做（与回访查询重叠、有误改风险）。
+  - 单测 `tests/test_plate_registry.py`；本地 `pytest` 22 绿。
+- **CD 全自动部署到 ECS Express**（代码侧，决策 010 迭代二）：`cd.yml` 末尾接官方 `aws-actions/amazon-ecs-deploy-express-service@v1`，push → 测试 → 推 ECR → 自动部署，告别手动 force new deployment。
+  - 关键点：Action 声明式重建 task def → 全部 env 须配进 GitHub（漏配会清空线上）；OIDC 角色要加 ECS Express 内联策略；显式指定 `container-port: 8080` + `health-check-path: /health`（默认 80//ping 会判不健康）。
+  - 账号侧待办（见 `docs/deploy_aws.md` 第 5b 步）：给 OIDC 角色加策略 + 配齐 GitHub Variables/Secrets；配好后首推盯一眼。
+  - **后端车牌改动随这次自动部署一起上线**（首推前先把账号侧配好；否则仍可手动 force 一次先上线车牌）。
+
 ## 关键文件（相对 6/16 有更新）
 - `backend/main.py`：字段校验 + 回访识别 + `lookup_visitor` 端点
 - `backend/config.py`：新增 `DATABASE_URL`（SQLite/Postgres 切换开关）
 - `backend/db.py`：双后端方言适配层（`_Conn`/`_Cursor`）+ `find_latest_by_plate` / `count_by_plate`
 - `backend/data/companies.json`：公司目录 seed
 - `backend/company_registry.py`：从 SQLite 公司目录读取并缓存
+- `backend/plate_registry.py`：车牌省份闭集 + 近音纠错 + 归一/校验（决策 011）；`tests/test_plate_registry.py` 单测
 - `backend/requirements-dev.txt`、`backend/conftest.py`、`backend/tests/test_backend.py`：测试依赖与冒烟用例
 - `Dockerfile` / `.dockerignore`：App Runner 镜像
 - `.github/workflows/ci.yml` / `cd.yml`：CI（SQLite+Postgres+构建）/ CD（推 ECR）
 - `vapi/system_prompt.md`：**最新版**（0~4 步流程：先 lookup 回访 → 收集 → 核对 → 登记 → 念 message）
 - `vapi/setup_dashboard.md`：新增 `lookup_visitor` 工具配置 + 回访验收 + 手机二维码入口配置
-- `docs/decisions/001~010`：十条决策记录（003 被 007 升级，005 被 009 修正，008 手机入口，010 CI/CD+AWS）
+- `docs/decisions/001~011`：十一条决策记录（003 被 007 升级，005 被 009 修正，008 手机入口，010 CI/CD+AWS，011 车牌校验数据层）
 - `docs/deploy_aws.md`：AWS 部署运行手册
 - `docs/backlog.md`：开发 backlog
 

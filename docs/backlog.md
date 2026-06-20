@@ -13,10 +13,15 @@
 - **手机二维码入口** ✅代码侧（6/19 晚）：新增 `/call` 手机 Web Call 页 + `/qr` 二维码页 + 决策 008；本地 smoke test 通过，待填 Vapi Public Key / Assistant ID 后真机验证
 - **手机二维码入口公网验证** ✅（6/19 晚）：`/qr` / `/call` 公网可达，手机可正常和 Agent 语音对话；修正 Vapi tool URL 后公网 `lookup_visitor` / `register_visitor` 自测通过，真实 Server酱推送约 `6.9s`
 - **公司目录数据层** ✅（6/20 上午）：`companies` / `company_aliases` 入 SQLite，prompt 移除完整公司白名单，新增决策 009，回归验证通过
-- **CI/CD + AWS 部署（代码侧）** ✅（6/20 上午）：`db.py` 双后端（SQLite/Postgres）、Dockerfile、`pytest` 冒烟、`ci.yml`（含 Postgres service）/`cd.yml`（OIDC 推 ECR）、决策 010 + `docs/deploy_aws.md`；本地测试 7 绿，待 push GitHub + 配 AWS 账号生效
+- **CI/CD + AWS 部署（代码侧）** ✅（6/20 上午）：`db.py` 双后端（SQLite/Postgres）、Dockerfile、`pytest` 冒烟、`ci.yml`（含 Postgres service）/`cd.yml`（OIDC 推 ECR）、决策 010 + `docs/deploy_aws.md`；本地测试 7 绿
+- **AWS 正式上线** ✅（6/20 下午）：GitHub 仓库 + OIDC + CI/CD 全绿 → ECR 镜像 → **ECS Express Mode**（App Runner 停止接新客户后改用官方继任者）+ Neon Postgres。固定地址 `https://vo-dc486323624a436eb4cf8b9f000737d7.ecs.ap-southeast-1.on.aws`，线上 `/health` 200、`/register_visitor` 写库+微信推送 SUCCESS（后端 ~1.8s）
+- **Vapi 中文音色优化** ✅（6/20 晚，控制台侧）：TTS 换 MiniMax 中文音色（治外国味）+ STT Deepgram Nova-3 + prompt 加「只说中文」（治蹦英文），已 publish
+- **车牌校验数据层** ✅代码侧（6/20 晚）：新增 `backend/plate_registry.py`（省份闭集 + 近音纠错 + 归一/校验）+ 决策 011，main.py 收编内联正则，`pytest` 22 绿；**待部署生效**
+- **CD 全自动部署** ✅代码侧（6/20 晚）：`cd.yml` 接官方 `amazon-ecs-deploy-express-service` Action，push 即上线（决策 010 迭代二）；**待账号侧配置**（OIDC 角色加 ECS Express 策略 + GitHub Variables/Secrets，见 `docs/deploy_aws.md` 5b）
 
 ## 下一步（按价值）
-- **AWS 上云（账号侧）**：按 `docs/deploy_aws.md` 建 Neon/ECR/OIDC/App Runner，拿固定域名换掉 cloudflared（顺带 serverless + CI/CD 加分落地）
+- **配齐 CD 自动部署账号侧 + 首推上线**：按 `deploy_aws.md` 5b 配 IAM 策略 + GitHub 变量/密钥 → push main → 自动部署带上车牌校验；首推盯一眼 CD 日志和服务 Healthy
+- **收尾上线接线**：手机流量真机过一遍
 - **必须项·25s 端到端 + 实战测试迭代**：题目硬指标至今未端到端掐表；= 考核核心「持续迭代」
 - **回访体验继续打磨**：lookup 触发时机、确认话术、未命中/信息变化路径
 - **多路并发完整链路验证**：2-3 台设备同时手机 Web Call + 真实微信推送，补齐 Vapi 层并发证据
