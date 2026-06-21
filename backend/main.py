@@ -159,6 +159,7 @@ def _lookup_core(plate_number, phone=None):
         "found": True,
         "matched_by": matched_by,
         "visit_count": visit_count,
+        "plate_number": last.get("plate_number", ""),
         "company": company,
         "reason": reason,
         "phone": last.get("phone", ""),
@@ -334,13 +335,15 @@ def list_visitors():
 
 @app.get("/visit/by-call/{call_id}")
 def visit_by_call(call_id: str):
-    """设备身份用（决策 012）：Web 通话结束后，访客手机用本次 call.id 取回登记的车牌，
-    存进本机 localStorage；下次扫码即可在接通时识别回访，无需再口报车牌。
+    """设备身份用（决策 012）：Web 通话结束后，访客手机用本次 call.id 取回本次登记的手机号，
+    存进本机 localStorage 当作「来电号码」；下次扫码即在接通时按手机号识别回访（模拟 caller ID）。
 
-    只读、只回车牌（最低敏感度）。依赖 Vapi register 工具体里带上 source_call_id={{call.id}}；
-    没带时查不到、返回 null，前端静默跳过（功能优雅失效，不报错）。"""
+    只读。依赖 Vapi register 工具体里带上 source_call_id={{call.id}}；没带时查不到、字段返回 null，
+    前端静默跳过（功能优雅失效，不报错）。车牌一并回传仅作兼容/调试。"""
     row = db.find_by_call_id(call_id)
-    return {"plate_number": row["plate_number"] if row else None}
+    if not row:
+        return {"phone": None, "plate_number": None}
+    return {"phone": row.get("phone"), "plate_number": row.get("plate_number")}
 
 
 @app.get("/guard", response_class=HTMLResponse)
@@ -413,28 +416,32 @@ def _render_call_html() -> str:
   <script type="module">
     const PUBLIC_KEY = __PUBLIC_KEY__;
     const ASSISTANT_ID = __ASSISTANT_ID__;
-    const PLATE_KEY = "vg_known_plate";
+    const PHONE_KEY = "vg_known_phone";
     const btn = document.getElementById("call-btn");
     const statusEl = document.getElementById("status");
     const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
 
-    // 设备身份（决策 012）：本机上次登记留下的车牌。接通时带给 Agent → 识别回访、免再报车牌。
-    let knownPlate = "";
-    try { knownPlate = localStorage.getItem(PLATE_KEY) || ""; } catch (e) {}
+    // 设备身份（决策 012）：把本机上次登记的手机号当作「来电号码」。同一手机再扫码＝同一来电号码，
+    // 接通时按它查最近一次历史 → 复述车牌/公司/事由、且全程不再追问手机号（模拟电话 caller ID）。
+    let knownPhone = "";
+    try {
+      knownPhone = localStorage.getItem(PHONE_KEY) || "";
+      localStorage.removeItem("vg_known_plate");   // 清掉旧版按车牌存的键
+    } catch (e) {}
 
     let vapi = null;
     let state = "idle";          // idle | connecting | active
     let connectTimer = null;
     let callId = null;
-    // 回访历史：加载时按本机车牌静默查一次，命中则开场白直接说全（去哪家、办啥事）。
-    let knownInfo = null;        // null=未查/查不到；{found,company,reason,phone}=命中
+    // 回访历史：加载时按本机手机号静默查最近一次，命中则开场白复述车牌/公司/事由。
+    let knownInfo = null;        // null=未查/查不到；{found,plate_number,company,reason,phone}=命中
     let knownInfoPromise = null;
 
     function idleHint() {
       if (knownInfo && knownInfo.found) {
-        return "本机登记过：上次去" + (knownInfo.company || "") + "，接通后确认即可";
+        return "本机来过：上次去" + (knownInfo.company || "") + "，接通后确认即可";
       }
-      if (knownPlate) return "本机登记过，接通后无需重报车牌";
+      if (knownPhone) return "本机登记过，接通后无需重报手机号";
       return "点击开始，并允许麦克风权限";
     }
 
@@ -468,14 +475,14 @@ def _render_call_html() -> str:
       statusEl.textContent = "已接通，请直接说话…";
     }
 
-    // 回访预取：用本机车牌静默查历史，供开场白说全（去哪家、办啥事）+ 命中提示。失败静默降级。
+    // 回访预取：用本机手机号静默查最近一次历史，供开场白复述车牌/公司/事由 + 命中提示。失败静默降级。
     async function prefetchKnown() {
-      if (!knownPlate) return;
+      if (!knownPhone) return;
       try {
         const r = await fetch("/lookup_visitor", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ plate_number: knownPlate }),
+          body: JSON.stringify({ phone: knownPhone }),
         });
         knownInfo = r.ok ? (await r.json()) : { found: false };
       } catch (e) {
@@ -484,15 +491,15 @@ def _render_call_html() -> str:
       if (state === "idle") statusEl.textContent = idleHint();
     }
 
-    // 通话结束后，用 call.id 回查本次登记的车牌，记到本机，供下次扫码识别回访。
-    async function rememberPlate() {
+    // 通话结束后，用 call.id 回查本次登记的手机号，记到本机当「来电号码」，供下次扫码识别回访。
+    async function rememberPhone() {
       if (!callId) return;
       try {
         const r = await fetch("/visit/by-call/" + encodeURIComponent(callId));
         if (!r.ok) return;
         const data = await r.json();
-        if (data && data.plate_number) {
-          localStorage.setItem(PLATE_KEY, data.plate_number);
+        if (data && data.phone) {
+          localStorage.setItem(PHONE_KEY, data.phone);
         }
       } catch (e) { console.warn("[remember]", e); }
     }
@@ -516,7 +523,7 @@ def _render_call_html() -> str:
       vapi = new Vapi(PUBLIC_KEY);
       vapi.on("call-start", setActive);
       vapi.on("call-end", async function () {
-        await rememberPlate();
+        await rememberPhone();
         setIdle("通话已结束，可再次开始");
       });
       vapi.on("error", function (e) {
@@ -530,29 +537,30 @@ def _render_call_html() -> str:
         if (state === "connecting") return;
         callId = null;
         setConnecting();
-        // 回访开场白：命中历史 → 一句说全（车+公司+事由），司机“对”即登记；
-        // 知车牌但查不到（如清库后）→ 只问公司+事由；新设备保持默认开场。
+        // 回访开场白：本机有「来电号码」(手机号) → 视作同一来电，全程不再问手机号；
+        //   查到最近历史 → 复述车牌+公司+事由让司机确认；查不到(如清库后) → 只问车牌+公司+事由；
+        //   新设备(无号) → 保持默认开场，照常采集含手机号。
         const overrides = {
           variableValues: {
-            known_plate: knownPlate,
+            known_phone: knownPhone,
+            known_plate: "",
             known_company: "",
             known_reason: "",
-            known_phone: "",
           },
         };
-        if (knownPlate) {
+        if (knownPhone) {
           if (knownInfo === null && knownInfoPromise) { try { await knownInfoPromise; } catch (e) {} }
           if (knownInfo && knownInfo.found) {
+            overrides.variableValues.known_plate = knownInfo.plate_number || "";
             overrides.variableValues.known_company = knownInfo.company || "";
             overrides.variableValues.known_reason = knownInfo.reason || "";
-            overrides.variableValues.known_phone = knownInfo.phone || "";
             overrides.firstMessage =
-              "您好，检测到您之前来过，这次还是开" + knownPlate +
+              "您好，检测到您之前来过，这次还是开" + (knownInfo.plate_number || "") +
               "，去" + (knownInfo.company || "") + "、" + (knownInfo.reason || "") +
               "吗？若入园信息有更新也请告诉我。";
           } else {
             overrides.firstMessage =
-              "您好，您这辆" + knownPlate + "，今天找哪家公司、办什么事儿？";
+              "您好，欢迎再次光临，今天开什么车、找哪家公司、办什么事儿？";
           }
         }
         try {
