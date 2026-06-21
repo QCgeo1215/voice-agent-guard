@@ -375,51 +375,144 @@ def _public_url(request: Request, path: str) -> str:
 
 
 def _render_call_html() -> str:
-    if VAPI_PUBLIC_KEY and VAPI_ASSISTANT_ID:
-        call_widget = f"""
-        <script src="https://unpkg.com/@vapi-ai/client-sdk-react/dist/embed/widget.umd.js" async type="text/javascript"></script>
-        <vapi-widget
-          public-key="{escape(VAPI_PUBLIC_KEY)}"
-          assistant-id="{escape(VAPI_ASSISTANT_ID)}"
-          mode="voice"
-          theme="light"
-          base-bg-color="#ffffff"
-          accent-color="#0f766e"
-          cta-button-color="#0f766e"
-          cta-button-text-color="#ffffff"
-          start-button-text="开始通话"
-          end-button-text="结束通话"
-        ></vapi-widget>
-        """
-    else:
-        call_widget = """
-        <div class="warning">
-          还没配置 Vapi Web Call。请在 <code>backend/.env</code> 填入
-          <code>VAPI_PUBLIC_KEY</code> 和 <code>VAPI_ASSISTANT_ID</code> 后重启后端。
-        </div>
-        """
+    """手机访客入口：用 Vapi Web SDK 自控通话按钮（替代黑盒 embed widget）。
 
-    return f"""
-<!doctype html>
+    自建 UI 解决三件事：① 响应式居中、适配手机屏；② 连接/失败/重试显式状态，
+    不再静默退回；③ 检测微信内置浏览器（WebRTC/麦克风用不了）时给醒目横幅、引导用系统浏览器。
+    """
+    configured = bool(VAPI_PUBLIC_KEY and VAPI_ASSISTANT_ID)
+
+    if configured:
+        call_section = """
+      <div id="wechat-banner" class="warning" style="display:none">
+        检测到<b>微信内置浏览器</b>，这里用不了麦克风。请点右上角「⋯」→「在浏览器打开」，再开始通话。
+      </div>
+      <div class="callbox">
+        <button id="call-btn" class="call-btn" disabled>加载中…</button>
+        <p id="status" class="status">正在加载通话组件…</p>
+      </div>
+"""
+        script_block = """
+  <script type="module">
+    const PUBLIC_KEY = __PUBLIC_KEY__;
+    const ASSISTANT_ID = __ASSISTANT_ID__;
+    const btn = document.getElementById("call-btn");
+    const statusEl = document.getElementById("status");
+    const banner = document.getElementById("wechat-banner");
+    const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
+
+    let vapi = null;
+    let state = "idle";          // idle | connecting | active
+    let connectTimer = null;
+
+    function setIdle(msg) {
+      state = "idle";
+      btn.textContent = "开始通话";
+      btn.disabled = false;
+      btn.classList.remove("active");
+      if (msg) statusEl.textContent = msg;
+    }
+    function setConnecting() {
+      state = "connecting";
+      btn.textContent = "连接中…";
+      btn.disabled = true;
+      btn.classList.remove("active");
+      statusEl.textContent = "正在连接，请稍候…";
+      clearTimeout(connectTimer);
+      connectTimer = setTimeout(function () {
+        if (state === "connecting") {
+          try { if (vapi) vapi.stop(); } catch (e) {}
+          setIdle("连接超时，请重试（信号弱可换 WiFi 或手机流量）");
+        }
+      }, 20000);
+    }
+    function setActive() {
+      state = "active";
+      clearTimeout(connectTimer);
+      btn.textContent = "结束通话";
+      btn.disabled = false;
+      btn.classList.add("active");
+      statusEl.textContent = "已接通，请直接说话…";
+    }
+
+    if (isWeChat) {
+      banner.style.display = "block";
+      btn.disabled = true;
+      btn.textContent = "请用浏览器打开";
+      statusEl.textContent = "微信内置浏览器用不了麦克风";
+    } else {
+      let Vapi;
+      try {
+        ({ default: Vapi } = await import("https://esm.sh/@vapi-ai/web"));
+      } catch (e) {
+        console.error("[vapi:import]", e);
+        btn.textContent = "加载失败";
+        statusEl.textContent = "通话组件加载失败，请刷新或换网络重试";
+        throw e;
+      }
+      vapi = new Vapi(PUBLIC_KEY);
+      vapi.on("call-start", setActive);
+      vapi.on("call-end", function () { setIdle("通话已结束，可再次开始"); });
+      vapi.on("error", function (e) {
+        console.error("[vapi:error]", e);
+        const m = (e && (e.errorMsg || (e.error && e.error.message) || e.message)) || "连接失败，请重试";
+        clearTimeout(connectTimer);
+        setIdle("出错了：" + m);
+      });
+      btn.addEventListener("click", async function () {
+        if (state === "active") { vapi.stop(); return; }
+        if (state === "connecting") return;
+        setConnecting();
+        try {
+          await vapi.start(ASSISTANT_ID);
+        } catch (e) {
+          console.error("[vapi:start]", e);
+          clearTimeout(connectTimer);
+          setIdle("无法开始：请允许麦克风权限后重试");
+        }
+      });
+      setIdle("点击开始，并允许麦克风权限");
+    }
+  </script>
+"""
+        script_block = script_block.replace(
+            "__PUBLIC_KEY__", json.dumps(VAPI_PUBLIC_KEY)
+        ).replace("__ASSISTANT_ID__", json.dumps(VAPI_ASSISTANT_ID))
+    else:
+        call_section = """
+      <div class="warning">
+        还没配置 Vapi Web Call。请在 <code>backend/.env</code> 填入
+        <code>VAPI_PUBLIC_KEY</code> 和 <code>VAPI_ASSISTANT_ID</code> 后重启后端。
+      </div>
+"""
+        script_block = ""
+
+    template = """<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>AI 门卫访客登记</title>
   <style>
-    :root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    body {{ margin: 0; min-height: 100vh; background: linear-gradient(160deg, #ecfeff 0%, #f8fafc 48%, #f0fdf4 100%); color: #0f172a; }}
-    main {{ max-width: 520px; margin: 0 auto; padding: 28px 20px 40px; }}
-    .hero {{ background: rgba(255,255,255,.92); border: 1px solid #dbeafe; border-radius: 28px; padding: 26px 22px; box-shadow: 0 22px 60px rgba(15, 23, 42, .12); }}
-    .badge {{ display: inline-flex; align-items: center; border-radius: 999px; background: #ccfbf1; color: #0f766e; padding: 6px 11px; font-weight: 700; font-size: 13px; }}
-    h1 {{ margin: 18px 0 10px; font-size: 34px; line-height: 1.12; letter-spacing: -.04em; }}
-    p {{ margin: 0; color: #475569; line-height: 1.65; font-size: 16px; }}
-    .steps {{ margin: 22px 0; padding: 0; list-style: none; display: grid; gap: 10px; }}
-    .steps li {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px 14px; color: #334155; }}
-    .widget {{ margin-top: 22px; min-height: 74px; display: grid; place-items: center; }}
-    .hint {{ margin-top: 18px; font-size: 13px; color: #64748b; }}
-    .warning {{ border: 1px solid #fbbf24; background: #fffbeb; color: #92400e; border-radius: 18px; padding: 16px; line-height: 1.6; }}
-    code {{ background: rgba(15, 23, 42, .08); border-radius: 6px; padding: 1px 5px; }}
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(160deg, #ecfeff 0%, #f8fafc 48%, #f0fdf4 100%); color: #0f172a; }
+    main { max-width: 520px; margin: 0 auto; padding: 28px 20px 40px; }
+    .hero { background: rgba(255,255,255,.92); border: 1px solid #dbeafe; border-radius: 28px; padding: 26px 22px; box-shadow: 0 22px 60px rgba(15, 23, 42, .12); }
+    .badge { display: inline-flex; align-items: center; border-radius: 999px; background: #ccfbf1; color: #0f766e; padding: 6px 11px; font-weight: 700; font-size: 13px; }
+    h1 { margin: 18px 0 10px; font-size: 32px; line-height: 1.12; letter-spacing: -.04em; }
+    p { margin: 0; color: #475569; line-height: 1.65; font-size: 16px; }
+    .steps { margin: 22px 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+    .steps li { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px 14px; color: #334155; }
+    .callbox { margin-top: 22px; display: grid; place-items: center; gap: 10px; }
+    .call-btn { appearance: none; border: none; cursor: pointer; width: min(320px, 100%); padding: 18px 24px; border-radius: 999px; background: #0f766e; color: #fff; font-size: 19px; font-weight: 700; box-shadow: 0 10px 24px rgba(15,118,110,.35); transition: transform .05s ease, background .2s ease; }
+    .call-btn:active { transform: scale(.98); }
+    .call-btn:disabled { background: #94a3b8; box-shadow: none; cursor: not-allowed; }
+    .call-btn.active { background: #dc2626; box-shadow: 0 10px 24px rgba(220,38,38,.35); }
+    .status { margin: 0; font-size: 14px; color: #64748b; min-height: 20px; text-align: center; }
+    .hint { margin-top: 18px; font-size: 13px; color: #64748b; }
+    .warning { border: 1px solid #fbbf24; background: #fffbeb; color: #92400e; border-radius: 18px; padding: 16px; line-height: 1.6; margin-bottom: 6px; }
+    code { background: rgba(15, 23, 42, .08); border-radius: 6px; padding: 1px 5px; }
   </style>
 </head>
 <body>
@@ -433,15 +526,17 @@ def _render_call_html() -> str:
         <li>2. 按语音提示说出访客信息</li>
         <li>3. 听到「已通知保安」后，请稍等放行</li>
       </ul>
-      <div class="widget">
-        {call_widget}
-      </div>
-      <p class="hint">如果在微信内置浏览器无法使用麦克风，请点右上角，用系统浏览器打开。</p>
+__CALL_SECTION__
+      <p class="hint">建议用系统浏览器（Safari / Chrome）打开；微信内置浏览器无法使用麦克风。</p>
     </section>
   </main>
+__SCRIPT_BLOCK__
 </body>
 </html>
 """
+    return template.replace("__CALL_SECTION__", call_section).replace(
+        "__SCRIPT_BLOCK__", script_block
+    )
 
 
 def _render_qr_html(call_url: str) -> str:

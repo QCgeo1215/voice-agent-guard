@@ -1,4 +1,6 @@
-# 项目进度快照（2026-06-18 晚）
+# 项目进度 · 工业园区访客语音登记 Agent
+
+> 最新状态见文末「当前状态」块（如何启动 / 待办 / 注意 / 接下来）；逐日明细见下方历史日志（只追加）。
 
 > 6/18 晚更新：今天继续做开发设计和系统完善，重点是门卫查询入口、公司名实体标准化，以及准备多路并发评估。
 >
@@ -246,6 +248,28 @@
   - 关键点：Action 声明式重建 task def → 全部 env 须配进 GitHub（漏配会清空线上）；OIDC 角色要加 ECS Express 内联策略；显式指定 `container-port: 8080` + `health-check-path: /health`（默认 80//ping 会判不健康）。
   - 账号侧待办（见 `docs/deploy_aws.md` 第 5b 步）：给 OIDC 角色加策略 + 配齐 GitHub Variables/Secrets；配好后首推盯一眼。
   - **后端车牌改动随这次自动部署一起上线**（首推前先把账号侧配好；否则仍可手动 force 一次先上线车牌）。
+- **CD 全自动首跑成功（6/20 晚，已上线）**：push commit `3a15789` → CI/CD 全绿 → 官方 Action 部署 Express，日志 `Deployment SUCCESSFUL`，endpoint 不变 `vo-dc486323624a436eb4cf8b9f000737d7...`。
+  - 踩坑修正：① VAPI_ASSISTANT_ID/PUBLIC_KEY 在 GitHub 填反/漏建已纠正；② 两个 ECS 角色实际在 `service-role/` 路径下，IAM `iam:PassRole` 的 ARN 已对齐带路径（决策 010 / deploy_aws 5b 已更）。
+  - 车牌数据层（plate_registry）已随本次部署上线；线上验证从校园网/本机 curl 受 TLS 重置干扰，改由真机通话/可联通网络验。
+
+## 6/20 收工小结（当天整体回顾 + 本地隧道退役）
+一天把项目从「本地隧道临时暴露」推到「AWS 固定地址 + 全自动 CD」，并做两处中文体验优化。四件事（详见上方分段，不复述）：
+1. 公司目录入库（决策 009）：白名单从 prompt 移到 SQLite，后端权威化。
+2. CI/CD + 上云（决策 010）：App Runner 停新客 → 改 ECS Express；CI/CD 全绿、服务上线、拿到固定 HTTPS 地址；CD 末尾接官方 Action，push 即自动部署（首跑成功）。
+3. Vapi 中文管线升级：MiniMax TTS + system prompt「只说中文」硬约束，外国味 / 蹦英文改善。
+4. 车牌校验数据层（决策 011）：省份闭集 + 近音纠错下沉后端，prompt 不增长。
+
+**启动方式变化（留痕）**：公网入口 从 cloudflared 临时隧道 → **AWS ECS Express 固定地址**；当晚已停掉本地 `uvicorn` + `cloudflared` 两个常驻进程（端口 8000 已释放），本地不再需要常驻。固定地址 `https://vo-dc486323624a436eb4cf8b9f000737d7.ecs.ap-southeast-1.on.aws`。
+
+**欠的账（明天主线）**：题目硬指标 **25s 端到端掐表 + 实测迭代记录** 仍未做；6/20 改的车牌纠错与回访话术需真机过一遍。
+
+## 6/21（真机验收 + 两个 badcase 与诚实边界）
+- 真机验收：**25s 端到端、车牌纠错、回访命中 均通过**，无明显问题。
+- 同学测出两个 badcase，定位根因都在 Vapi STT 层（后端代码无误）：
+  1. 公司名（如「晨星物流」）偶尔被识别成英文/拼音 → STT 音译。STT 已是中文专用，效果仍「一般」，属模型残留限制，**接受不强修**。
+  2. 手机号 `13511111111`（八个 1）被听成 9 位 → ASR 对连续相同数字漏数；全 1 测试号现实不存在，属硬限制，**不强修**。
+- prompt 兜底（已改 `vapi/system_prompt.md`，需粘回 Vapi，不依赖换模型）：① 识别到英文/拼音公司名 → 判为误差、用中文重问，不念英文、不传工具；② 同一手机号两次数不对 → 请司机分三段慢报。救真实偶发漏听，救不了极端测试号。
+- 结论：语音模型本身存在限制，一周做到此程度可接受；不再投入纠这两类 STT 误差。
 
 ## 关键文件（相对 6/16 有更新）
 - `backend/main.py`：字段校验 + 回访识别 + `lookup_visitor` 端点
@@ -263,44 +287,40 @@
 - `docs/deploy_aws.md`：AWS 部署运行手册
 - `docs/backlog.md`：开发 backlog
 
-## 如何启动（明天照这个来）
-1. 后端（`backend/`）：
-   ```powershell
-   .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
-   ```
-2. 隧道（**加 http2**，本机 QUIC 会失败）：
-   ```powershell
-   cloudflared tunnel --url http://localhost:8000 --protocol http2
-   ```
-   地址重启会变 → 同步到 Vapi Tool URL，结尾 `/register_visitor`
-3. Vapi：确认 System Prompt 和 Tool Description 是最新版（见 `vapi/system_prompt.md`）
-4. 手机入口：
-   - 后端 `.env` 填 `VAPI_PUBLIC_KEY` / `VAPI_ASSISTANT_ID`
-   - 打开 `https://<当前隧道地址>/qr`，手机扫码进入 `/call`
-5. 查询 Agent 自测：`.\.venv\Scripts\python.exe ask_guard.py 今天来了几辆车`
+## 如何启动
+**线上（已部署，主用）**：服务跑在 AWS ECS Express，固定地址
+`https://vo-dc486323624a436eb4cf8b9f000737d7.ecs.ap-southeast-1.on.aws`
+push 到 `main` → CI/CD 自动 测试 + 构建 + 部署，无需手动操作。Vapi 两个工具 URL 已指该域名（路径 `/lookup_visitor`、`/register_visitor`）。手机入口：浏览器开 `<固定地址>/qr` 扫码进 `/call`。
+
+**本地开发（可选，仅改代码时）**：
+1. 后端（默认 SQLite）：`cd backend; .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000`
+2. 公网验证不再用 cloudflared（已退役）——直接用线上地址，或 push 走 CD 验证。
+3. 跑测试：`cd backend; .\.venv\Scripts\python.exe -m pytest -q`
+4. 查询 Agent 自测：`.\.venv\Scripts\python.exe ask_guard.py 今天来了几辆车`
+5. 改 `vapi/system_prompt.md` 后仍需手动粘到 Vapi 控制台（仓库不自动同步）。
 
 ## 待办（按优先级，开发优先）
-1. **AWS 上云（账号侧操作）**：按 `docs/deploy_aws.md` 建 Neon / ECR / OIDC 角色 / Secrets / App Runner，拿固定域名，换掉 cloudflared；代码侧已就绪。
-2. **必须项：25s 端到端实测 + 实战测试迭代**（题目硬指标，需形成文档证据）
-3. **回访体验继续打磨**：lookup 触发时机、确认话术、未命中/信息变化路径
-4. **多路并发完整链路验证**：2-3 台设备同时手机 Web Call + 真实微信推送
-5. **C2. 门卫查询 Agent 可选增强**：查询历史、上周/前天、页面表格化
-6. **D2. 并发可选增强**：真实 Server酱推送慢网测试 / 异步队列方案设计 / 更完整 trace 页面
-7. **靠后·交付**：README 压一页、git、demo 视频、实测记录
-8. **靠后·答辩材料**：已有 10 条决策记录，后续选型继续补 `docs/decisions/`
+1. **必须项：25s 端到端实测 + 实战测试迭代**（题目硬指标，需形成文档证据 `docs/test_runs.md`）：正常新访客 / 回访 / 缺字段 / 错手机号 / 改口 / 未知公司 / 车牌纠错。
+2. **回访体验继续打磨**：lookup 触发时机、确认话术、未命中/信息变化路径。
+3. **多路并发完整链路验证**：2-3 台设备同时手机 Web Call + 真实微信推送，补 Vapi 层并发证据。
+4. **C2. 门卫查询 Agent 可选增强**：查询历史、上周/前天、页面表格化。
+5. **D2. 并发可选增强**：真实 Server酱推送慢网测试 / 异步队列方案设计 / 更完整 trace 页面。
+6. **靠后·交付**：README 压一页、git、demo 视频、实测记录。
+7. **靠后·答辩材料**：已有 11 条决策记录，后续选型继续补 `docs/decisions/`。
 
-CI/CD 代码侧已完成（6/20）：双后端 DB、Dockerfile、测试、`ci.yml`/`cd.yml`；待 push GitHub + 配 AWS 后生效。
+上云 + 固定地址 + 全自动 CD 已收口（6/20，push 即上线）；AWS 账号侧成本注意 demo 后及时删服务。
 
 ## 注意 / 坑
-- **Vapi prompt 双份维护**：改 `vapi/system_prompt.md` → 必须粘到 Vapi 控制台
-- cloudflared 本机默认 QUIC 握手失败 → 用 `--protocol http2`
-- 隧道地址重启必变
-- PowerShell 中文 JSON 乱码是显示问题，数据正常
-- uvicorn 干净重启：`taskkill /PID <pid> /T /F`
+- **Vapi prompt 双份维护**：改 `vapi/system_prompt.md` → 必须粘到 Vapi 控制台。
+- **CD 声明式部署**：`cd.yml` 用官方 Action 重建 task def，所有运行时 env 必须配进 GitHub Variables/Secrets，漏配会清空线上变量（见 `docs/deploy_aws.md` 5b）。
+- AWS 成本：demo 结束后记得删 ECS Express 服务 / Neon 库，避免持续计费。
+- PowerShell 中文 JSON 乱码是显示问题，数据正常。
+- 校园网 / 本机对新域名有 DNS 负缓存、curl 偶发 TLS 重置 → 验证优先用真机流量或线上日志。
+- cloudflared（已退役，仅历史本地）：本机默认 QUIC 握手失败需 `--protocol http2`，且地址重启必变——正是改用 AWS 固定地址的原因。
 
-## 明天从哪继续
-CI/CD + 双后端 DB 代码侧已就绪（本地 `pytest` 7 绿）。下一步两条线：
-1. **上云拿固定地址**：按 `docs/deploy_aws.md` 完成 Neon + ECR + OIDC + App Runner，把 Vapi 工具 URL 换成固定域名，彻底告别 cloudflared 变址。
-2. **回题目必须项**：用固定地址 + 手机入口跑 **25s 端到端实测 + 实战测试迭代**（正常新访客 / 回访 / 缺字段 / 改口 / 未知公司）。
+## 接下来从哪继续
+上云 + 固定地址 + 全自动 CD 已收口（push 即上线）。主线回到题目硬指标：
+1. **25s 端到端掐表 + 实测迭代**：用固定地址 + 手机真机跑多场景，结果记 `docs/test_runs.md`（模板待建）。
+2. **车牌纠错 / 回访体验真机验收**：6/20 改的 `plate_registry` 与回访话术需真机过一遍。
 
 本地跑测试：`cd backend; .\.venv\Scripts\python.exe -m pytest -q`。

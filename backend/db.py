@@ -34,12 +34,20 @@ if IS_POSTGRES:
         "INSERT INTO company_aliases (company_id, alias, created_at) "
         "VALUES (?, ?, ?) ON CONFLICT (alias) DO NOTHING"
     )
+    _INSERT_IGNORE_COMPANY = (
+        "INSERT INTO companies (name, active, created_at) "
+        "VALUES (?, 1, ?) ON CONFLICT (name) DO NOTHING"
+    )
 else:
     _INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
     _PK = "INTEGER PRIMARY KEY AUTOINCREMENT"
     _INSERT_IGNORE_ALIAS = (
         "INSERT OR IGNORE INTO company_aliases (company_id, alias, created_at) "
         "VALUES (?, ?, ?)"
+    )
+    _INSERT_IGNORE_COMPANY = (
+        "INSERT OR IGNORE INTO companies (name, active, created_at) "
+        "VALUES (?, 1, ?)"
     )
 
 
@@ -159,14 +167,16 @@ def init_db():
         )
         if not IS_POSTGRES:
             conn.execute("PRAGMA journal_mode = WAL")
-        _seed_companies_if_empty(conn)
+        _sync_company_seed(conn)
 
 
-def _seed_companies_if_empty(conn):
-    """Demo 默认公司目录。只在空表初始化，后续人工维护不会被覆盖。"""
-    row = conn.execute("SELECT COUNT(*) AS n FROM companies").fetchone()
-    if row["n"] > 0:
-        return
+def _sync_company_seed(conn):
+    """把 seed 公司目录幂等同步进库：只增不删（ON CONFLICT DO NOTHING）。
+
+    改为「每次启动同步」而非「仅空表导入」：这样在 companies.json 里新增公司 / 别名
+    （如车牌式近音纠错、拼音/英文音译别名）后，部署即生效，无需手动改库。
+    既有记录与人工新增的别名一律保留，不覆盖、不删除（决策 009 迭代）。
+    """
     if not COMPANY_SEED_PATH.exists():
         return
     data = json.loads(COMPANY_SEED_PATH.read_text(encoding="utf-8"))
@@ -175,10 +185,11 @@ def _seed_companies_if_empty(conn):
         name = (item.get("name") or "").strip()
         if not name:
             continue
-        company_id = conn.execute_returning_id(
-            "INSERT INTO companies (name, active, created_at) VALUES (?, 1, ?)",
-            (name, now),
-        )
+        conn.execute(_INSERT_IGNORE_COMPANY, (name, now))
+        row = conn.execute("SELECT id FROM companies WHERE name = ?", (name,)).fetchone()
+        if not row:
+            continue
+        company_id = row["id"]
         for alias in item.get("aliases", []):
             alias = (alias or "").strip()
             if not alias:

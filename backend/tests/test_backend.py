@@ -85,3 +85,16 @@ def test_company_normalization():
     assert cr.normalize_company("蓝鲸") == "蓝色鲸鱼科技"
     with pytest.raises(cr.UnknownCompanyError):
         cr.normalize_company("完全不相关的随机词")
+
+
+def test_company_pinyin_and_english_aliases():
+    """STT 把中文公司名识别成拼音/英文音译时，别名应能命中标准名（与车牌近音纠错同思路）。"""
+    import company_registry as cr
+
+    cr.reload_company_registry()
+    # 拼音（大小写/空格不敏感，经 _compact 归一）
+    assert cr.normalize_company("chenxing") == "晨星物流"
+    assert cr.normalize_company("Chen Xing Wu Liu") == "晨星物流"
+    # 英文直译
+    assert cr.normalize_company("blue whale") == "蓝色鲸鱼科技"
+    assert cr.normalize_company("morning star") == "晨星物流"

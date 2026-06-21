@@ -16,48 +16,153 @@
         "鲸鱼科技",
         "精于科技",
         "精于科技公司",
-        "京于科技"
+        "京于科技",
+        "lansejingyu",
+        "lansejingyukeji",
+        "jingyu",
+        "jingyukeji",
+        "lanjing",
+        "lanjingkeji",
+        "blue whale",
+        "bluewhale",
+        "blue whale tech"
       ]
     },
     {
       "name": "绿藤科技",
-      "aliases": ["绿藤", "绿藤公司", "绿藤科技公司", "绿腾科技", "绿色藤科技"]
+      "aliases": [
+        "绿藤",
+        "绿藤公司",
+        "绿藤科技公司",
+        "绿腾科技",
+        "绿色藤科技",
+        "律藤科技",
+        "绿庭科技",
+        "lvteng",
+        "luteng",
+        "lvtengkeji",
+        "lutengkeji",
+        "green vine",
+        "greenvine"
+      ]
     },
     {
       "name": "晨星物流",
-      "aliases": ["晨星", "晨星物流公司", "成兴物流", "晨鑫物流"]
+      "aliases": [
+        "晨星",
+        "晨星物流公司",
+        "成兴物流",
+        "晨鑫物流",
+        "沉星物流",
+        "晨兴物流",
+        "陈星物流",
+        "chenxing",
+        "chenxingwuliu",
+        "morning star",
+        "morningstar"
+      ]
     },
     {
       "name": "云杉智能",
-      "aliases": ["云杉", "云杉智能公司", "云山智能", "云森智能"]
+      "aliases": [
+        "云杉",
+        "云杉智能公司",
+        "云山智能",
+        "云森智能",
+        "云沙智能",
+        "yunshan",
+        "yunshanzhineng",
+        "spruce"
+      ]
     },
     {
       "name": "星河电子",
-      "aliases": ["星河", "星河电子公司", "新河电子", "星合电子"]
+      "aliases": [
+        "星河",
+        "星河电子公司",
+        "新河电子",
+        "星合电子",
+        "星和电子",
+        "兴河电子",
+        "xinghe",
+        "xinghedianzi",
+        "galaxy"
+      ]
     },
     {
       "name": "安桥制造",
-      "aliases": ["安桥", "安桥制造公司", "安乔制造", "安桥智造"]
+      "aliases": [
+        "安桥",
+        "安桥制造公司",
+        "安乔制造",
+        "安桥智造",
+        "安乔智造",
+        "anqiao",
+        "anqiaozhizao"
+      ]
     },
     {
       "name": "北辰生物",
-      "aliases": ["北辰", "北辰生物公司", "北城生物", "北晨生物"]
+      "aliases": [
+        "北辰",
+        "北辰生物公司",
+        "北城生物",
+        "北晨生物",
+        "贝辰生物",
+        "beichen",
+        "beichenshengwu"
+      ]
     },
     {
       "name": "海棠设计",
-      "aliases": ["海棠", "海棠设计公司", "海唐设计", "海棠设记"]
+      "aliases": [
+        "海棠",
+        "海棠设计公司",
+        "海唐设计",
+        "海棠设记",
+        "海堂设计",
+        "haitang",
+        "haitangsheji"
+      ]
     },
     {
       "name": "松果新能源",
-      "aliases": ["松果", "松果能源", "松果新能源公司", "松谷新能源", "松果新能原"]
+      "aliases": [
+        "松果",
+        "松果能源",
+        "松果新能源公司",
+        "松谷新能源",
+        "松果新能原",
+        "松果星能源",
+        "songguo",
+        "songguoxinnengyuan",
+        "pinecone"
+      ]
     },
     {
       "name": "远山材料",
-      "aliases": ["远山", "远山材料公司", "元山材料", "远杉材料"]
+      "aliases": [
+        "远山",
+        "远山材料公司",
+        "元山材料",
+        "远杉材料",
+        "圆山材料",
+        "yuanshan",
+        "yuanshancailiao"
+      ]
     },
     {
       "name": "白泽机器人",
-      "aliases": ["白泽", "白泽机器人公司", "百泽机器人", "白泽机器"]
+      "aliases": [
+        "白泽",
+        "白泽机器人公司",
+        "百泽机器人",
+        "白泽机器",
+        "白则机器人",
+        "柏泽机器人",
+        "baize",
+        "baizejiqiren"
+      ]
     }
   ]
 }
