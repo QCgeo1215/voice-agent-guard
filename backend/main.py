@@ -343,6 +343,29 @@ def visit_by_call(call_id: str):
     return {"plate_number": row["plate_number"] if row else None}
 
 
+@app.get("/debug/reach")
+def debug_reach():
+    """临时诊断：从 ECS 出口探测各推送 host 可达性，定位「云→国内推送」被封问题。用完即删。"""
+    import requests as _rq
+
+    targets = {
+        "serverchan": "https://sctapi.ftqq.com/",
+        "pushplus": "https://www.pushplus.plus/",
+        "wecom": "https://qyapi.weixin.qq.com/cgi-bin/gettoken",
+        "telegram": "https://api.telegram.org/",
+        "bark": "https://api.day.app/",
+    }
+    out = {}
+    for name, url in targets.items():
+        t0 = time.monotonic()
+        try:
+            r = _rq.get(url, timeout=6)
+            out[name] = {"ok": True, "status": r.status_code, "ms": int((time.monotonic() - t0) * 1000)}
+        except Exception as e:
+            out[name] = {"ok": False, "error": str(e)[:200], "ms": int((time.monotonic() - t0) * 1000)}
+    return out
+
+
 @app.get("/guard", response_class=HTMLResponse)
 def guard_console():
     """轻量门卫查询后台：Server酱负责单向推送，主动查询走这个页面。"""
