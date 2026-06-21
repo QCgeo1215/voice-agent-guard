@@ -769,10 +769,11 @@ GUARD_CONSOLE_HTML = """
 
 # 返回给语音模型的话术，直接用中文，确保 TTS 念得对、措辞统一。
 # 用词避坑：用"保安"不用"门卫"（Azure 中文 TTS 易把"门卫"念成"满位"）。
-SPEECH_SUCCESS = "好的，信息登记好了，我这就通知保安放行，您稍等。"
-SPEECH_SUCCESS_REVISIT = "您之前来过，欢迎回来！信息登记好了，我这就通知保安放行，您稍等。"
+# 成功语以「欢迎进入园区」收尾：该短语已注册为 Vapi endCallPhrases，念完即自动挂断，故不再说"稍等"。
+SPEECH_SUCCESS = "好的，信息登记好了，已通知保安放行，欢迎进入园区！"
+SPEECH_SUCCESS_REVISIT = "欢迎回来！信息登记好了，已通知保安放行，欢迎进入园区！"
 SPEECH_FAIL = "信息登记上了，不过通知保安没成功，麻烦您稍等，我叫人工处理。"
-SPEECH_IDEMPOTENT = "这辆车刚登记过了，您稍等放行就行。"
+SPEECH_IDEMPOTENT = "这辆车刚登记过了，欢迎进入园区！"
 SPEECH_ERROR = "不好意思，系统这会儿有点问题，麻烦您稍等，我叫人工来处理。"
 SPEECH_BAD_PHONE = "手机号好像不太对，麻烦您再说一遍完整的 11 位手机号。"
 SPEECH_BAD_PLATE = "车牌号好像没太清楚，麻烦您把完整车牌号再说一遍。"
