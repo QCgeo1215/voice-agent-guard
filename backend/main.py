@@ -332,6 +332,17 @@ def list_visitors():
     return db.list_visitors()
 
 
+@app.get("/visit/by-call/{call_id}")
+def visit_by_call(call_id: str):
+    """设备身份用（决策 012）：Web 通话结束后，访客手机用本次 call.id 取回登记的车牌，
+    存进本机 localStorage；下次扫码即可在接通时识别回访，无需再口报车牌。
+
+    只读、只回车牌（最低敏感度）。依赖 Vapi register 工具体里带上 source_call_id={{call.id}}；
+    没带时查不到、返回 null，前端静默跳过（功能优雅失效，不报错）。"""
+    row = db.find_by_call_id(call_id)
+    return {"plate_number": row["plate_number"] if row else None}
+
+
 @app.get("/guard", response_class=HTMLResponse)
 def guard_console():
     """轻量门卫查询后台：Server酱负责单向推送，主动查询走这个页面。"""
@@ -384,10 +395,16 @@ def _render_call_html() -> str:
 
     if configured:
         call_section = """
-      <div id="wechat-banner" class="warning" style="display:none">
-        检测到<b>微信内置浏览器</b>，这里用不了麦克风。请点右上角「⋯」→「在浏览器打开」，再开始通话。
+      <div id="wx-top-arrow" class="wx-top-arrow" style="display:none">↑ 右上角 ⋯ → 在浏览器打开</div>
+      <div id="wechat-guide" class="wxguide" style="display:none">
+        <h2 class="wxguide-title">换浏览器打开，即可语音登记</h2>
+        <ol class="wxguide-steps">
+          <li><b>①</b> 点屏幕<b>右上角 ⋯</b></li>
+          <li><b>②</b> 选 <b>「在浏览器打开」</b></li>
+        </ol>
+        <p class="wxguide-note">微信里用不了麦克风，换系统浏览器 1 秒搞定；打开后点「开始通话」即可。</p>
       </div>
-      <div class="callbox">
+      <div class="callbox" id="callbox">
         <button id="call-btn" class="call-btn" disabled>加载中…</button>
         <p id="status" class="status">正在加载通话组件…</p>
       </div>
@@ -396,21 +413,30 @@ def _render_call_html() -> str:
   <script type="module">
     const PUBLIC_KEY = __PUBLIC_KEY__;
     const ASSISTANT_ID = __ASSISTANT_ID__;
+    const PLATE_KEY = "vg_known_plate";
     const btn = document.getElementById("call-btn");
     const statusEl = document.getElementById("status");
-    const banner = document.getElementById("wechat-banner");
     const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
+
+    // 设备身份（决策 012）：本机上次登记留下的车牌。接通时带给 Agent → 识别回访、免再报车牌。
+    let knownPlate = "";
+    try { knownPlate = localStorage.getItem(PLATE_KEY) || ""; } catch (e) {}
 
     let vapi = null;
     let state = "idle";          // idle | connecting | active
     let connectTimer = null;
+    let callId = null;
+
+    const idleHint = knownPlate
+      ? "本机登记过，接通后无需重报车牌"
+      : "点击开始，并允许麦克风权限";
 
     function setIdle(msg) {
       state = "idle";
       btn.textContent = "开始通话";
       btn.disabled = false;
       btn.classList.remove("active");
-      if (msg) statusEl.textContent = msg;
+      statusEl.textContent = msg || idleHint;
     }
     function setConnecting() {
       state = "connecting";
@@ -435,11 +461,24 @@ def _render_call_html() -> str:
       statusEl.textContent = "已接通，请直接说话…";
     }
 
+    // 通话结束后，用 call.id 回查本次登记的车牌，记到本机，供下次扫码识别回访。
+    async function rememberPlate() {
+      if (!callId) return;
+      try {
+        const r = await fetch("/visit/by-call/" + encodeURIComponent(callId));
+        if (!r.ok) return;
+        const data = await r.json();
+        if (data && data.plate_number) {
+          localStorage.setItem(PLATE_KEY, data.plate_number);
+        }
+      } catch (e) { console.warn("[remember]", e); }
+    }
+
     if (isWeChat) {
-      banner.style.display = "block";
-      btn.disabled = true;
-      btn.textContent = "请用浏览器打开";
-      statusEl.textContent = "微信内置浏览器用不了麦克风";
+      // 微信内置浏览器拿不到麦克风，也无法自动跳出 → 显式两步引导用户切到系统浏览器
+      document.getElementById("wechat-guide").style.display = "block";
+      document.getElementById("wx-top-arrow").style.display = "block";
+      document.getElementById("callbox").style.display = "none";
     } else {
       let Vapi;
       try {
@@ -452,7 +491,10 @@ def _render_call_html() -> str:
       }
       vapi = new Vapi(PUBLIC_KEY);
       vapi.on("call-start", setActive);
-      vapi.on("call-end", function () { setIdle("通话已结束，可再次开始"); });
+      vapi.on("call-end", async function () {
+        await rememberPlate();
+        setIdle("通话已结束，可再次开始");
+      });
       vapi.on("error", function (e) {
         console.error("[vapi:error]", e);
         const m = (e && (e.errorMsg || (e.error && e.error.message) || e.message)) || "连接失败，请重试";
@@ -462,16 +504,23 @@ def _render_call_html() -> str:
       btn.addEventListener("click", async function () {
         if (state === "active") { vapi.stop(); return; }
         if (state === "connecting") return;
+        callId = null;
         setConnecting();
+        // 已知车牌只在非空时覆盖开场白，避免回访还问“车牌多少”；新设备保持原开场。
+        const overrides = { variableValues: { known_plate: knownPlate } };
+        if (knownPlate) {
+          overrides.firstMessage = "您好，还是上次那辆车、办一样的事儿吗？不一样也直接跟我说。";
+        }
         try {
-          await vapi.start(ASSISTANT_ID);
+          const call = await vapi.start(ASSISTANT_ID, overrides);
+          if (call && call.id) callId = call.id;
         } catch (e) {
           console.error("[vapi:start]", e);
           clearTimeout(connectTimer);
           setIdle("无法开始：请允许麦克风权限后重试");
         }
       });
-      setIdle("点击开始，并允许麦克风权限");
+      setIdle();
     }
   </script>
 """
@@ -512,6 +561,14 @@ def _render_call_html() -> str:
     .status { margin: 0; font-size: 14px; color: #64748b; min-height: 20px; text-align: center; }
     .hint { margin-top: 18px; font-size: 13px; color: #64748b; }
     .warning { border: 1px solid #fbbf24; background: #fffbeb; color: #92400e; border-radius: 18px; padding: 16px; line-height: 1.6; margin-bottom: 6px; }
+    .wx-top-arrow { position: fixed; top: 6px; right: 10px; z-index: 50; background: #0f766e; color: #fff; padding: 8px 12px; border-radius: 12px; font-size: 13px; font-weight: 700; box-shadow: 0 8px 22px rgba(15,118,110,.45); animation: bob 1s ease-in-out infinite; }
+    @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    .wxguide { margin-top: 22px; border: 1px solid #99f6e4; background: #f0fdfa; color: #134e4a; border-radius: 18px; padding: 20px; }
+    .wxguide-title { margin: 0 0 14px; font-size: 20px; }
+    .wxguide-steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+    .wxguide-steps li { background: #fff; border: 1px solid #ccfbf1; border-radius: 12px; padding: 12px 14px; font-size: 17px; }
+    .wxguide-steps b { color: #0f766e; }
+    .wxguide-note { margin: 14px 0 0; font-size: 13px; color: #475569; line-height: 1.6; }
     code { background: rgba(15, 23, 42, .08); border-radius: 6px; padding: 1px 5px; }
   </style>
 </head>
@@ -566,7 +623,7 @@ def _render_qr_html(call_url: str) -> str:
     <p>用手机扫码打开访客登记页面，点击「开始通话」后直接和 AI 门卫对话。</p>
     <img src="{qr_src}" alt="手机呼叫入口二维码" />
     <p><a href="{safe_call_url}">{safe_call_url}</a></p>
-    <p class="note">cloudflared 地址每次重启都会变化；如果地址变了，重新打开本页即可生成新二维码。</p>
+    <p class="note">建议用<b>手机相机</b>扫码，可直接在浏览器打开；若用微信扫码，请在右上角「⋯」选「在浏览器打开」再开始通话。</p>
   </main>
 </body>
 </html>

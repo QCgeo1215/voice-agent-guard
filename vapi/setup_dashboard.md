@@ -28,9 +28,14 @@
      - `company` (string) — 来访单位
      - `phone` (string) — 访客手机号
      - `reason` (string) — 来访事由, 如送货/拜访/面试
-4. **Save**
+4. 额外字段（决策 012，设备身份/幂等用）：放在 **Static Body Fields**（key/value 行区，**不是**上面 4 个参数的 schema builder）→ Add Field：Key=`source_call_id`，Type=`string`，Value=`{{call.id}}`。
+   - 为什么不放 schema builder：那是 LLM 面向的 JSON Schema（模型填、可见），模型会把 `{{call.id}}` 乱填成 `"1"`/`"undefined"`/字面量；Static Body Fields 由 Vapi 服务端用真 call.id 填、模型不可见、最后合并覆盖。
+   - 兜底：工具 `</>` JSON 编辑里，顶层加 `"parameters": [{ "key": "source_call_id", "value": "{{call.id}}" }]`（顶层 `parameters` 数组，与 `body` 内 schema 两码事）。
+5. **Save**
 
-> API Request 会直接把 4 个字段 POST 成扁平 JSON 到 `/register_visitor`，后端已支持。
+> API Request 会把 4 个 schema 字段 + 静态 `source_call_id` 一起 POST 成扁平 JSON 到 `/register_visitor`，后端已支持。
+> `source_call_id={{call.id}}` 让 Web 通话也有幂等键，并支撑前端用 `GET /visit/by-call/{call.id}` 取回车牌、记到访客手机，实现「下次扫码识别回访」。没加也不报错，回访识别优雅失效。
+> 验证：系统浏览器登记一次→挂断→刷新 `/call`，状态变「本机登记过，接通后无需重报车牌」即全链路通。
 
 ---
 
