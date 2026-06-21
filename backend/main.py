@@ -15,7 +15,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
@@ -343,20 +343,6 @@ def visit_by_call(call_id: str):
     return {"plate_number": row["plate_number"] if row else None}
 
 
-# 临时维护端点（演示前清库用）。token 写死、私库可见、测试窗口结束的下一次部署会删掉。
-# 只清 visitors（保留公司白名单）。生产里不应长期存在这种破坏性路由。
-_WIPE_TOKEN = "wipe-vg-20260621"
-
-
-@app.post("/admin/wipe_visitors")
-def admin_wipe_visitors(token: str = ""):
-    if token != _WIPE_TOKEN:
-        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
-    deleted = db.clear_visitors()
-    print(f"[admin] wiped visitors: {deleted} rows")
-    return {"ok": True, "deleted": deleted, "remaining": len(db.list_visitors(limit=1))}
-
-
 @app.get("/guard", response_class=HTMLResponse)
 def guard_console():
     """轻量门卫查询后台：Server酱负责单向推送，主动查询走这个页面。"""
@@ -563,7 +549,7 @@ def _render_call_html() -> str:
             overrides.firstMessage =
               "您好，检测到您之前来过，这次还是开" + knownPlate +
               "，去" + (knownInfo.company || "") + "、" + (knownInfo.reason || "") +
-              "吗？不一样也直接跟我说。";
+              "吗？若入园信息有更新也请告诉我。";
           } else {
             overrides.firstMessage =
               "您好，您这辆" + knownPlate + "，今天找哪家公司、办什么事儿？";
