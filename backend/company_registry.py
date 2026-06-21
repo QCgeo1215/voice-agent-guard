@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from re import sub
 
+from pypinyin import lazy_pinyin
 import requests
 
 from config import (
@@ -80,10 +81,29 @@ def _compact(name: str) -> str:
     return text.lower()
 
 
+def _pinyin(text: str) -> str:
+    """转无声调拼音串（中文按读音、英文/拼音原样），用于同音听错匹配。
+    例：鲸鱼/金鱼/精于→jingyu；陈兴/晨星→chenxing。"""
+    return "".join(lazy_pinyin(text or ""))
+
+
+@lru_cache(maxsize=1)
+def _alias_pinyin():
+    """别名（已 _compact）→ 拼音串。预算一次，供候选打分复用。"""
+    return {alias_key: _pinyin(alias_key) for alias_key in _alias_to_standard()}
+
+
 def _rank_candidates(key: str):
+    """每个别名取 max(字面相似, 拼音相似)，聚合到标准名取最高分。
+    拼音相似补字面之不足：STT 同音错字（如「陈兴物流」↔「晨星物流」）字面差很多、读音却一致。"""
+    key_py = _pinyin(key)
+    alias_py = _alias_pinyin()
     scores = {}
     for alias_key, standard in _alias_to_standard().items():
-        score = SequenceMatcher(None, key, alias_key).ratio()
+        char_r = SequenceMatcher(None, key, alias_key).ratio()
+        a_py = alias_py.get(alias_key, "")
+        py_r = SequenceMatcher(None, key_py, a_py).ratio() if key_py and a_py else 0.0
+        score = max(char_r, py_r)
         scores[standard] = max(scores.get(standard, 0.0), score)
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
@@ -113,6 +133,7 @@ def reload_company_registry():
     """后台维护公司目录后可调用；demo 阶段主要用于测试。"""
     _company_registry.cache_clear()
     _alias_to_standard.cache_clear()
+    _alias_pinyin.cache_clear()
 
 
 def _llm_rerank(raw_name: str, candidates: list[str]) -> str:

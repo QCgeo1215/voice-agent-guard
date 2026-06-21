@@ -113,3 +113,15 @@ def test_company_pinyin_and_english_aliases():
     # 英文直译
     assert cr.normalize_company("blue whale") == "蓝色鲸鱼科技"
     assert cr.normalize_company("morning star") == "晨星物流"
+
+
+def test_company_homophone_via_pinyin():
+    """STT 同音错字（字面差很多、读音一致）靠拼音相似度命中标准名；真不同公司仍硬拦截。"""
+    import company_registry as cr
+
+    cr.reload_company_registry()
+    # “陈兴物流”不在别名表里，字面相似不足以确信（约 0.75），但拼音 chenxingwuliu 一致 → 命中
+    assert cr.normalize_company("陈兴物流") == "晨星物流"
+    # 白名单限制保留：园区里没有的公司，拼音也不该误命中
+    with pytest.raises(cr.UnknownCompanyError):
+        cr.normalize_company("全新科技公司")
