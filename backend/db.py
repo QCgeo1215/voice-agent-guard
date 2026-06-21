@@ -308,6 +308,15 @@ def list_visitors(limit=20):
         return [dict(r) for r in rows]
 
 
+def clear_visitors():
+    """清空访客登记（演示/测试前重置用）。只删 visitors，公司白名单保留。"""
+    with get_conn() as conn:
+        before = conn.execute("SELECT COUNT(*) AS n FROM visitors").fetchone()["n"]
+        conn.execute("DELETE FROM visitors")
+        conn.commit()
+        return before
+
+
 # ---- 门卫查询 Agent 用：参数化条件查询。字段白名单写死、值全部走占位符，零注入 ----
 
 def _build_filters(

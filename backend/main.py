@@ -15,7 +15,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
@@ -343,6 +343,20 @@ def visit_by_call(call_id: str):
     return {"plate_number": row["plate_number"] if row else None}
 
 
+# 临时维护端点（演示前清库用）。token 写死、私库可见、测试窗口结束的下一次部署会删掉。
+# 只清 visitors（保留公司白名单）。生产里不应长期存在这种破坏性路由。
+_WIPE_TOKEN = "wipe-vg-20260621"
+
+
+@app.post("/admin/wipe_visitors")
+def admin_wipe_visitors(token: str = ""):
+    if token != _WIPE_TOKEN:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    deleted = db.clear_visitors()
+    print(f"[admin] wiped visitors: {deleted} rows")
+    return {"ok": True, "deleted": deleted, "remaining": len(db.list_visitors(limit=1))}
+
+
 @app.get("/guard", response_class=HTMLResponse)
 def guard_console():
     """轻量门卫查询后台：Server酱负责单向推送，主动查询走这个页面。"""
@@ -426,17 +440,24 @@ def _render_call_html() -> str:
     let state = "idle";          // idle | connecting | active
     let connectTimer = null;
     let callId = null;
+    // 回访历史：加载时按本机车牌静默查一次，命中则开场白直接说全（去哪家、办啥事）。
+    let knownInfo = null;        // null=未查/查不到；{found,company,reason,phone}=命中
+    let knownInfoPromise = null;
 
-    const idleHint = knownPlate
-      ? "本机登记过，接通后无需重报车牌"
-      : "点击开始，并允许麦克风权限";
+    function idleHint() {
+      if (knownInfo && knownInfo.found) {
+        return "本机登记过：上次去" + (knownInfo.company || "") + "，接通后确认即可";
+      }
+      if (knownPlate) return "本机登记过，接通后无需重报车牌";
+      return "点击开始，并允许麦克风权限";
+    }
 
     function setIdle(msg) {
       state = "idle";
       btn.textContent = "开始通话";
       btn.disabled = false;
       btn.classList.remove("active");
-      statusEl.textContent = msg || idleHint;
+      statusEl.textContent = msg || idleHint();
     }
     function setConnecting() {
       state = "connecting";
@@ -461,6 +482,22 @@ def _render_call_html() -> str:
       statusEl.textContent = "已接通，请直接说话…";
     }
 
+    // 回访预取：用本机车牌静默查历史，供开场白说全（去哪家、办啥事）+ 命中提示。失败静默降级。
+    async function prefetchKnown() {
+      if (!knownPlate) return;
+      try {
+        const r = await fetch("/lookup_visitor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plate_number: knownPlate }),
+        });
+        knownInfo = r.ok ? (await r.json()) : { found: false };
+      } catch (e) {
+        knownInfo = { found: false };
+      }
+      if (state === "idle") statusEl.textContent = idleHint();
+    }
+
     // 通话结束后，用 call.id 回查本次登记的车牌，记到本机，供下次扫码识别回访。
     async function rememberPlate() {
       if (!callId) return;
@@ -480,6 +517,7 @@ def _render_call_html() -> str:
       document.getElementById("wx-top-arrow").style.display = "block";
       document.getElementById("callbox").style.display = "none";
     } else {
+      knownInfoPromise = prefetchKnown();   // 与 SDK 加载并行，点按钮前一般已就绪
       let Vapi;
       try {
         ({ default: Vapi } = await import("https://esm.sh/@vapi-ai/web"));
@@ -506,10 +544,30 @@ def _render_call_html() -> str:
         if (state === "connecting") return;
         callId = null;
         setConnecting();
-        // 已知车牌只在非空时覆盖开场白，避免回访还问“车牌多少”；新设备保持原开场。
-        const overrides = { variableValues: { known_plate: knownPlate } };
+        // 回访开场白：命中历史 → 一句说全（车+公司+事由），司机“对”即登记；
+        // 知车牌但查不到（如清库后）→ 只问公司+事由；新设备保持默认开场。
+        const overrides = {
+          variableValues: {
+            known_plate: knownPlate,
+            known_company: "",
+            known_reason: "",
+            known_phone: "",
+          },
+        };
         if (knownPlate) {
-          overrides.firstMessage = "您好，还是上次那辆车、办一样的事儿吗？不一样也直接跟我说。";
+          if (knownInfo === null && knownInfoPromise) { try { await knownInfoPromise; } catch (e) {} }
+          if (knownInfo && knownInfo.found) {
+            overrides.variableValues.known_company = knownInfo.company || "";
+            overrides.variableValues.known_reason = knownInfo.reason || "";
+            overrides.variableValues.known_phone = knownInfo.phone || "";
+            overrides.firstMessage =
+              "您好，检测到您之前来过，这次还是开" + knownPlate +
+              "，去" + (knownInfo.company || "") + "、" + (knownInfo.reason || "") +
+              "吗？不一样也直接跟我说。";
+          } else {
+            overrides.firstMessage =
+              "您好，您这辆" + knownPlate + "，今天找哪家公司、办什么事儿？";
+          }
         }
         try {
           const call = await vapi.start(ASSISTANT_ID, overrides);
