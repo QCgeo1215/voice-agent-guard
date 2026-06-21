@@ -44,6 +44,21 @@ def test_bad_phone(client):
     assert r.json()["success"] is False
 
 
+def test_phone_with_spoken_yao(client):
+    # STT/LLM 把手机号里的 1 写成「幺」、0 写成「零」，后端应归一为数字并通过校验
+    r = client.post(
+        "/register_visitor",
+        json={
+            "plate_number": "沪A52321",
+            "company": "绿藤科技",
+            "phone": "幺三八零零幺三八零零零",  # = 13800138000
+            "reason": "送货",
+            "source_call_id": "call-yao-1",
+        },
+    )
+    assert r.json()["success"] is True
+
+
 def test_unknown_company(client):
     r = client.post(
         "/register_visitor",

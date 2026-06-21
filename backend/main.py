@@ -737,7 +737,9 @@ def _normalize_plate(s: str) -> str:
 
 
 def _normalize_phone(s: str) -> str:
-    return re.sub(r"[\s\-()（）]", "", s or "")
+    # 先把口语数字（幺→1、两→2…）归一，再去分隔符；应对 STT/LLM 把 1 写成「幺」
+    s = plate_registry.normalize_cn_digits(s or "")
+    return re.sub(r"[\s\-()（）]", "", s)
 
 
 def _validate_fields(fields) -> Optional[str]:

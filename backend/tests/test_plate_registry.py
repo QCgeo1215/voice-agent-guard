@@ -54,4 +54,21 @@ def test_clean_plate_never_raises():
     # clean 用于回访查询：尽力归一，脏数据也不抛错
     assert pr.clean_plate("户a 123") == "沪A123"
     assert pr.clean_plate("") == ""
-    assert pr.clean_plate("乱七八糟") == "乱七八糟"
+    assert pr.clean_plate("乱码") == "乱码"
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("幺三五", "135"),       # 幺→1
+        ("两壹零", "210"),       # 两→2 壹→1 零→0
+        ("13800138000", "13800138000"),  # 纯阿拉伯数字不变
+    ],
+)
+def test_normalize_cn_digits(raw, expected):
+    assert pr.normalize_cn_digits(raw) == expected
+
+
+def test_plate_with_spoken_digits():
+    # STT 把车牌数字串听成口语数字（幺二三四五）也能归一
+    assert pr.normalize_plate("沪A幺二三四五") == "沪A12345"
