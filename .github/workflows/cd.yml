@@ -9,10 +9,12 @@ name: CD
 #     AWS_REGION            ap-southeast-1
 #     ECR_REPOSITORY        voice-agent
 #     DATABASE_URL          Neon Postgres 连接串
-#     SERVERCHAN_SENDKEY    Server酱 SendKey
+#     WECOM_WEBHOOK_KEY     企业微信群机器人 Webhook 地址末尾的 key=（云上主推送通道）
+#     SERVERCHAN_SENDKEY    Server酱 SendKey（个人微信备用，海外云不稳）
 #     LLM_API_KEY           门卫查询/公司重排用的 LLM key
 #     VAPI_PUBLIC_KEY       手机端 /call 页用
 #   Variables（非敏感）：
+#     NOTIFIER_PROVIDER     wecom | serverchan | pushplus（缺省 wecom）
 #     ECS_SERVICE           ECS Express 服务名（如 voice-agent-746c）
 #     ECS_CLUSTER           ECS 集群名（在 ECS 控制台查；常为 default）
 #     ECS_EXECUTION_ROLE_ARN   arn:aws:iam::<acct>:role/ecsTaskExecutionRole
@@ -73,7 +75,8 @@ jobs:
         env:
           APP_ENV: production
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          NOTIFIER_PROVIDER: serverchan
+          NOTIFIER_PROVIDER: ${{ vars.NOTIFIER_PROVIDER || 'wecom' }}
+          WECOM_WEBHOOK_KEY: ${{ secrets.WECOM_WEBHOOK_KEY }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           SERVERCHAN_API_BASE: ${{ vars.SERVERCHAN_API_BASE || 'https://sctapi.ftqq.com' }}
           NOTIFY_TIMEOUT_SECONDS: "8"
@@ -89,9 +92,9 @@ jobs:
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
           keys = [
-              "APP_ENV", "DATABASE_URL", "NOTIFIER_PROVIDER", "SERVERCHAN_SENDKEY",
-              "SERVERCHAN_API_BASE", "NOTIFY_TIMEOUT_SECONDS", "LLM_API_KEY",
-              "LLM_BASE_URL", "LLM_MODEL", "LLM_TIMEOUT_SECONDS",
+              "APP_ENV", "DATABASE_URL", "NOTIFIER_PROVIDER", "WECOM_WEBHOOK_KEY",
+              "SERVERCHAN_SENDKEY", "SERVERCHAN_API_BASE", "NOTIFY_TIMEOUT_SECONDS",
+              "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL", "LLM_TIMEOUT_SECONDS",
               "COMPANY_RESOLVE_USE_LLM", "COMPANY_RESOLVE_LLM_TIMEOUT_SECONDS",
               "VAPI_PUBLIC_KEY", "VAPI_ASSISTANT_ID",
           ]

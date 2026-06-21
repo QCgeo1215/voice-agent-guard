@@ -343,40 +343,6 @@ def visit_by_call(call_id: str):
     return {"plate_number": row["plate_number"] if row else None}
 
 
-@app.get("/debug/reach")
-def debug_reach():
-    """临时诊断：从 ECS 出口实测各推送服务的真实 send 路径（POST），定位「云→国内推送」被封问题。用完即删。
-    用假 token/key，只看连得通不通（返回 JSON errcode = 通；connect 超时 = 被封）。"""
-    import socket
-
-    import requests as _rq
-
-    out = {}
-
-    # DNS：Server酱多 IP 时，部分 IP 可能从云被黑洞 → 解释「时通时不通」
-    try:
-        ips = sorted({ai[4][0] for ai in socket.getaddrinfo("sctapi.ftqq.com", 443)})
-        out["serverchan_dns"] = ips
-    except Exception as e:
-        out["serverchan_dns"] = f"err: {e}"
-
-    def probe(name, method, url, **kw):
-        t0 = time.monotonic()
-        try:
-            r = _rq.request(method, url, timeout=8, **kw)
-            out[name] = {"ok": True, "status": r.status_code, "body": r.text[:120], "ms": int((time.monotonic() - t0) * 1000)}
-        except Exception as e:
-            out[name] = {"ok": False, "error": str(e)[:160], "ms": int((time.monotonic() - t0) * 1000)}
-
-    # Server酱真实 send 重复 3 次，看丢包率
-    for i in range(3):
-        probe(f"serverchan_send_{i}", "POST", "https://sctapi.ftqq.com/PROBE.send", data={"title": "x", "desp": "x"})
-    probe("pushplus_send", "POST", "https://www.pushplus.plus/send", json={"token": "PROBE", "title": "x", "content": "x", "template": "txt"})
-    probe("wecom_webhook", "POST", "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=PROBE", json={"msgtype": "text", "text": {"content": "x"}})
-    probe("telegram", "GET", "https://api.telegram.org/")
-    return out
-
-
 @app.get("/guard", response_class=HTMLResponse)
 def guard_console():
     """轻量门卫查询后台：Server酱负责单向推送，主动查询走这个页面。"""

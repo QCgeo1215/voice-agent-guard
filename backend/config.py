@@ -16,11 +16,17 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "visitors.db")
 DATABASE_TIMEOUT_SECONDS = float(os.getenv("DATABASE_TIMEOUT_SECONDS", "5"))
 SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000"))
 
-# 推送通道：serverchan | pushplus | noop
+# 推送通道：wecom | serverchan | pushplus | noop
 # 统一 strip()，避免 .env 里 key 前后多余空格导致鉴权失败
+# 云上主通道用 wecom：Server酱/pushplus 是国内小服务，其 IP 部分被 AWS 海外出口黑洞丢包，
+# 而 requests 只连首个解析 IP、不自动切换，导致「时通时不通」（见决策 013）。
 NOTIFIER_PROVIDER = os.getenv("NOTIFIER_PROVIDER", "serverchan").strip()
 
-# Server酱（主通道）
+# 企业微信群机器人（云上主通道）：webhook key 取自「群 → 群机器人 → Webhook 地址」末尾 key=
+# 走腾讯 qyapi.weixin.qq.com，多 IP/CDN，海外云可达性远高于方糖/pushplus；key 静态、不过期。
+WECOM_WEBHOOK_KEY = os.getenv("WECOM_WEBHOOK_KEY", "").strip()
+
+# Server酱（个人微信通道；本地/国内出口可靠，海外云不稳）
 SERVERCHAN_SENDKEY = os.getenv("SERVERCHAN_SENDKEY", "").strip()
 SERVERCHAN_API_BASE = os.getenv("SERVERCHAN_API_BASE", "https://sctapi.ftqq.com").strip()
 

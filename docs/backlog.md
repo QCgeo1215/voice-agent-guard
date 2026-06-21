@@ -18,10 +18,10 @@
 - **Vapi 中文音色优化** ✅（6/20 晚，控制台侧）：TTS 换 MiniMax 中文音色（治外国味）+ STT Deepgram Nova-3 + prompt 加「只说中文」（治蹦英文），已 publish
 - **车牌校验数据层** ✅代码侧（6/20 晚）：新增 `backend/plate_registry.py`（省份闭集 + 近音纠错 + 归一/校验）+ 决策 011，main.py 收编内联正则，`pytest` 22 绿；**待部署生效**
 - **CD 全自动部署** ✅代码侧（6/20 晚）：`cd.yml` 接官方 `amazon-ecs-deploy-express-service` Action，push 即上线（决策 010 迭代二）；**待账号侧配置**（OIDC 角色加 ECS Express 策略 + GitHub Variables/Secrets，见 `docs/deploy_aws.md` 5b）
-- **`/call` Web SDK 重写 + 设备身份回访** ✅代码侧（6/21 下午，决策 012）：`/call` 弃黑盒 embed 改 Vapi Web SDK 自建响应式 UI（居中按钮 + 连接状态机 + 微信浏览器横幅）；localStorage 记本机上次车牌 → 回访扫码经 `variableValues` 带 `known_plate`「接通即识别」；新增只读 `GET /visit/by-call/{id}`；`pytest` 23 绿。**待 Vapi 控制台两处配置 + 真机验收**
+- **`/call` Web SDK 重写 + 设备身份回访** ✅代码侧（6/21 下午，决策 012）：`/call` 弃黑盒 embed 改 Vapi Web SDK 自建响应式 UI（居中按钮 + 连接状态机 + 微信浏览器横幅）；localStorage 记本机上次车牌 → 回访扫码经 `variableValues` 带 `known_plate`「接通即识别」；新增只读 `GET /visit/by-call/{id}`；`pytest` 23 绿。**真机验收通过（6/21）**：同一手机连续两次扫码自动关联车牌、接通即识别，整条链路线上跑通。
 
 ## 下一步（按价值）
-- **设备身份回访接线 + 验收（决策 012）**：Vapi 配 `{{known_plate}}` + register 工具体 `source_call_id={{call.id}}` → 真机「同机隔次扫码 → 接通即识别」
+- **推送通道接线（决策 013，进行中）**：代码已就绪（`notifier._wecom_send` + `cd.yml` 注入 `WECOM_WEBHOOK_KEY`）。待用户建企业微信群+群机器人取 key → GitHub 配 secret → 重跑 CD → 端到端实测保安群收到登记卡片。背景：Server酱 从 AWS 海外出口因 IP 黑洞时通时不通。
 - **配齐 CD 自动部署账号侧 + 首推上线**：按 `deploy_aws.md` 5b 配 IAM 策略 + GitHub 变量/密钥 → push main → 自动部署带上车牌校验；首推盯一眼 CD 日志和服务 Healthy
 - **收尾上线接线**：手机流量真机过一遍
 - **必须项·25s 端到端 + 实战测试迭代**：题目硬指标至今未端到端掐表；= 考核核心「持续迭代」
