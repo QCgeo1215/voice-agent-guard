@@ -1,7 +1,7 @@
 # 010 CI/CD 与 AWS 云部署路线
 
 ## 背景 / 约束
-- 题目加分项：serverless / 云原生部署 + CI/CD。
+- 进阶方向：serverless / 云原生部署 + CI/CD。
 - 直接痛点：本地 `cloudflared` 隧道每次重启都换公网地址，Vapi 工具 URL 要反复改，演示很烦。需要一个**固定公网地址**。
 - 现状：FastAPI + 本地 SQLite 单文件，靠 cloudflared 临时暴露。
 - 用户决策（6/20）：选「方案 C：上云」，接受较大改动；数据库用 Neon、已有 AWS 账号、走 GitHub + CI/CD。
@@ -26,7 +26,7 @@
 
 ### 部署 / CI-CD 拓扑
 1. **App Runner 源码连接（GitHub）+ 托管运行时**：最简单，但用托管 runtime 不走 Dockerfile，且测试仍要另配。
-2. **GitHub Actions → 构建镜像 → 推 ECR → App Runner 自动部署（本次采用）**：CI（pytest）+ CD（build/push）一条龙，复用 Dockerfile，最能体现 CI/CD 加分；App Runner 对 ECR 仓库开「自动部署」，推 `:latest` 即上线。
+2. **GitHub Actions → 构建镜像 → 推 ECR → App Runner 自动部署（本次采用）**：CI（pytest）+ CD（build/push）一条龙，复用 Dockerfile，最能体现 CI/CD 工程化；App Runner 对 ECR 仓库开「自动部署」，推 `:latest` 即上线。
 
 ## 最终选择
 **Amazon ECS Express Mode（计算）+ Neon PostgreSQL（数据）+ GitHub Actions（CI/CD，OIDC 推 ECR）。**
@@ -40,7 +40,7 @@
 > 关键约束：该 Action 是声明式（每次按 workflow 重建 task definition），所以**全部运行时环境变量须配进 GitHub**（Secrets/Variables），
 > 否则部署会清空控制台手填的值；并需给 OIDC 角色加 ECS Express 内联策略（`*ExpressGatewayService` + `iam:PassRole`）。
 > 容器端口 `8080`、健康检查 `/health` 必须在 Action 入参里显式指定（其默认是 80 / `/ping`，否则判不健康）。
-> 取舍：手动只需点一下、零风险；全自动一次性配置成本更高、且会接管线上环境变量，但换来 push 即上线、配置集中在 GitHub 一处。本项目选全自动以做满 CI/CD 加分。
+> 取舍：手动只需点一下、零风险；全自动一次性配置成本更高、且会接管线上环境变量，但换来 push 即上线、配置集中在 GitHub 一处。本项目选全自动以做满 CI/CD 工程化。
 
 代码侧改动（本轮已完成，未依赖 AWS 账号即可验证）：
 - `config.py` 增 `DATABASE_URL` 开关：留空走本地 SQLite，填 `postgres://...` 走 Postgres。

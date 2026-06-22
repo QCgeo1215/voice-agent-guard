@@ -101,7 +101,6 @@ python -m pytest -q          # SQLite + noop 推送，无外部依赖
 ## 文档
 
 - 关键技术取舍 · 决策记录（15 条）：[`docs/decisions/`](docs/decisions)（上云、推送通道、回访识别、公司/车牌校验等）
-- 电话号码方案可行性评估：[`docs/phone_number_analysis.md`](docs/phone_number_analysis.md)
 - 云部署运行手册：[`docs/deploy_aws.md`](docs/deploy_aws.md)
 - Vapi 门卫 system prompt：[`vapi/system_prompt.md`](vapi/system_prompt.md)（需配置到 Vapi 控制台）
 

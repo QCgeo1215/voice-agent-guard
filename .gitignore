@@ -6,7 +6,7 @@ __pycache__/
 *.log
 .DS_Store
 
-# 仅本地保留、不进正式版仓库：开发过程文档 / 题目原件 / 工作配置 / 临时脚本
+# 仅本地保留、不进正式版仓库：开发过程文档 / 原始需求 / 工作配置 / 临时脚本
 .cursor/
 requirement/
 primary_design/
@@ -14,4 +14,5 @@ docs/PROGRESS.md
 docs/backlog.md
 docs/development_plan_*.md
 docs/test_runs.md
+docs/phone_number_analysis.md
 vapi/_*.py
