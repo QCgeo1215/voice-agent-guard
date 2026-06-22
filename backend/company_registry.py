@@ -53,10 +53,13 @@ def normalize_company(raw_name: str) -> str:
     top_name, top_score = candidates[0]
     second_score = candidates[1][1] if len(candidates) > 1 else 0.0
     margin = top_score - second_score
-    if top_score >= 0.82 and margin >= 0.18:
+    # 自动接受放宽（决策 014 迭代）：园区仅 11 家、读音两两差异大，拼音兜底已把同音错字推到 ~1.0；
+    # 把「听个大概就对」的近音/简称（如「蓝色科技」→蓝色鲸鱼科技、「鑫星物流」→晨星物流）直接放行，
+    # 不再卡在 0.75~0.82 让司机反复确认（体感差、占 25s 预算）。真未知（全新科技 ~0.57）仍落到末尾硬拒。
+    if top_score >= 0.75 and margin >= 0.10:
         return top_name
 
-    if COMPANY_RESOLVE_USE_LLM and LLM_API_KEY and top_score >= 0.72 and margin >= 0.12:
+    if COMPANY_RESOLVE_USE_LLM and LLM_API_KEY and top_score >= 0.62 and margin >= 0.08:
         judged = _llm_rerank(raw, [name for name, _ in candidates[:3]])
         if judged in standard_company_names():
             return judged
@@ -65,7 +68,8 @@ def normalize_company(raw_name: str) -> str:
         if judged == "unknown":
             raise UnknownCompanyError(raw)
 
-    if top_score >= 0.75 and margin >= 0.12:
+    # 仅「沾边但不够确定」才回问一次（窄带、罕触发）；再低就是真不在名单，硬拒转人工。
+    if top_score >= 0.62 and margin >= 0.08:
         raise UnknownCompanyError(raw, suggestions=[top_name])
     raise UnknownCompanyError(raw)
 

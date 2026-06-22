@@ -125,3 +125,32 @@ def test_company_homophone_via_pinyin():
     # 白名单限制保留：园区里没有的公司，拼音也不该误命中
     with pytest.raises(cr.UnknownCompanyError):
         cr.normalize_company("全新科技公司")
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("蓝色科技", "蓝色鲸鱼科技"),     # 简称：旧阈值卡 0.80 会反问，现直接放行
+        ("blue whale technology", "蓝色鲸鱼科技"),  # 英文+多余词
+        ("鑫星物流", "晨星物流"),         # 近音错字
+        ("北辰科技", "北辰生物"),         # 错后缀但园区只有一个「北辰」
+        ("星空电子", "星河电子"),         # 近音
+        ("圆形材料", "远山材料"),         # 近音
+    ],
+)
+def test_company_accept_near_match_no_confirm(raw, expected):
+    """决策 014 迭代：园区仅 11 家、读音差异大，听个大概就放行，不再卡 0.75~0.82 反复确认。"""
+    import company_registry as cr
+
+    cr.reload_company_registry()
+    assert cr.normalize_company(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["全新科技公司", "红色鲨鱼科技", "随便一家没有的公司"])
+def test_company_reject_truly_unknown(raw):
+    """放宽自动接受后，真不在名单的公司仍必须硬拒（白名单不破）。"""
+    import company_registry as cr
+
+    cr.reload_company_registry()
+    with pytest.raises(cr.UnknownCompanyError):
+        cr.normalize_company(raw)
