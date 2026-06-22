@@ -2,7 +2,7 @@
 
 访客手机扫码 → AI 门卫中文语音对话采集（车牌 / 来访公司 / 手机号 / 事由）→ 后端结构化入库 → 企业微信群机器人通知保安放行。附「门卫查询后台」用自然语言查访客数据。
 
-> 面试 take-home。已云端部署，push 即上线。关键技术取舍见 [`docs/decisions/`](docs/decisions)。
+> 已云端部署，push 即上线。关键技术取舍见 [`docs/decisions/`](docs/decisions)。
 
 ## 在线体验（AWS ECS Express 固定地址）
 
@@ -101,7 +101,7 @@ python -m pytest -q          # SQLite + noop 推送，无外部依赖
 ## 文档
 
 - 关键技术取舍 · 决策记录（15 条）：[`docs/decisions/`](docs/decisions)（上云、推送通道、回访识别、公司/车牌校验等）
-- 电话号码可行性评估（题目考点）：[`docs/phone_number_analysis.md`](docs/phone_number_analysis.md)
+- 电话号码方案可行性评估：[`docs/phone_number_analysis.md`](docs/phone_number_analysis.md)
 - 云部署运行手册：[`docs/deploy_aws.md`](docs/deploy_aws.md)
 - Vapi 门卫 system prompt：[`vapi/system_prompt.md`](vapi/system_prompt.md)（需配置到 Vapi 控制台）
 
