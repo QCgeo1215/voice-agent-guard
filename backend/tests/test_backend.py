@@ -69,7 +69,11 @@ def test_unknown_company(client):
             "reason": "拜访",
         },
     )
-    assert r.json()["success"] is False
+    body = r.json()
+    assert body["success"] is False
+    # 真未知公司：直接说没有 + 转人工，不罗列园区公司、不诱导反复确认
+    assert "转人工" in body["message"]
+    assert "可登记的公司有" not in body["message"]
 
 
 def test_lookup_revisit(client):

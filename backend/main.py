@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from config import VAPI_ASSISTANT_ID, VAPI_PUBLIC_KEY
 import db
-from company_registry import UnknownCompanyError, company_help_text, normalize_company
+from company_registry import UnknownCompanyError, normalize_company
 import plate_registry
 import query_agent
 from notifier import NotifyError, send_notification
@@ -812,10 +812,12 @@ def _normalize_company_field(fields) -> Optional[str]:
         fields["company"] = normalize_company(fields["company"])
         return None
     except UnknownCompanyError as e:
+        # 默认「直接说没有→转人工」，不罗列园区公司、不诱导反复确认（决策 014 迭代）。
+        # 仅当有高相近候选时，才顺口给一次确认机会（兜底，罕触发）。
         if e.suggestions:
             guess = "、".join(e.suggestions)
-            return f"园区里没直接查到这个来访单位。您说的是{guess}吗？如果不是，请再说一遍公司全称。"
-        return f"园区里没查到这个来访单位。请确认公司名称，目前可登记的公司有：{company_help_text()}。"
+            return f"没查到这家来访单位，您说的是{guess}吗？"
+        return "没查到这家来访单位，不在园区登记名单，我帮您转人工核实。"
 
 
 FIELD_CN = {
