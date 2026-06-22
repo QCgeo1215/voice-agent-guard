@@ -109,3 +109,11 @@ python -m pytest -q          # SQLite + noop 推送，无外部依赖
 - 设备身份是「同一浏览器」而非「同一人」；换机/清缓存优雅退回报车牌流程。
 - STT 对极端测试号（如连续 8 个 1）、纯音译公司名仍有残留误差，靠 prompt 兜底重问。
 - 门卫后台日期按服务器 UTC 计。
+
+## 版权 / License
+
+© 2026 QCgeo1215. All Rights Reserved. 保留所有权利。
+
+本仓库为作者个人作品，仅供查看与评估之用。未经作者书面许可，禁止复制、修改、再分发或用于任何商业用途。
+
+This repository is a personal work, provided for viewing and evaluation only. No copying, modification, redistribution, or commercial use without the author's written permission.
