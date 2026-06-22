@@ -35,6 +35,28 @@ def test_province_confusable_correction(raw, expected):
 
 
 @pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("庐A12345", "鲁A12345"),  # 庐(lú)→鲁：手工表没有，靠无声调唯一命中
+        ("襟B12345", "津B12345"),  # 襟(jīn)→津：靠声调区分 津jin1/晋jin4
+        ("禁C12345", "晋C12345"),  # 禁(jìn)→晋
+        ("扇D12345", "陕D12345"),  # 扇(shàn)→陕：容忍声调差（陕=shǎn）
+        ("葬E12345", "藏E12345"),  # 葬(zàng)→藏
+    ],
+)
+def test_province_pinyin_fallback(raw, expected):
+    assert pr.normalize_plate(raw) == expected
+
+
+@pytest.mark.parametrize("ch", ["跪", "鸡", "宇"])  # 桂/贵、冀/吉、豫/渝 同音歧义
+def test_province_pinyin_ambiguous_not_guessed(ch):
+    # 拼音命中多个省时绝不猜，留给对话重说（车牌猜错＝静默写错牌）
+    assert pr._province_by_pinyin(ch) is None
+    with pytest.raises(pr.InvalidPlateError):
+        pr.normalize_plate(ch + "A12345")
+
+
+@pytest.mark.parametrize(
     "raw",
     [
         "",            # 空

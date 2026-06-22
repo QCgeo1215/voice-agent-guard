@@ -7,7 +7,7 @@
 - 访客车牌绝大多数是第一次来的陌生车，无法预先列出，所以车牌**不能**做"不在名单就拒绝"的闸门，
   否则会挡掉所有新访客。这里只做三件事：
     1. 省份简称闭集校验（挡假车牌 / STT 听成非省份字）；
-    2. 省份首字近音纠正（听岔的首字自动校回，少一轮追问）；
+    2. 省份首字近音纠正：手工近音表 + 拼音兜底（仅唯一命中才纠、歧义不猜，决策 015），把听岔的首字自动校回；
     3. 格式归一与校验（全角转半角、去分隔符、长度/字符规则）。
 - 省份简称是国家标准常量（31 个、全国通用、十年不变），不是园区业务数据，故放代码常量、不入库；
   为它建表属于过度设计。
@@ -16,6 +16,8 @@
 """
 import re
 import unicodedata
+
+from pypinyin import Style, pinyin
 
 
 class InvalidPlateError(ValueError):
@@ -86,6 +88,55 @@ _PROVINCE_CONFUSABLE = {
     "饿": "鄂", "恶": "鄂",
 }
 
+# —— 省份首字拼音兜底（决策 015）——
+# 手工表只覆盖「想到的」近音字；这里用拼音把任意同音字自动纠回。但单字拼音有不可消除的歧义
+# （桂/贵同音、京/津/晋相近），且车牌是开集、猜错＝静默写错牌没人发现，所以铁律：
+# 只在「拼音唯一命中一个省」时才纠，命中 0 个或多个一律不猜，留给对话重说。
+# 省份读音硬编码（单字多音，不靠 pypinyin 猜），与 heard 字的 pypinyin 同用 TONE3 制式比对。
+_PROVINCE_PINYIN = {
+    "京": "jing1", "津": "jin1", "冀": "ji4", "晋": "jin4", "蒙": "meng2",
+    "辽": "liao2", "吉": "ji2", "黑": "hei1", "沪": "hu4", "苏": "su1",
+    "浙": "zhe4", "皖": "wan3", "闽": "min3", "赣": "gan4", "鲁": "lu3",
+    "豫": "yu4", "鄂": "e4", "湘": "xiang1", "粤": "yue4", "桂": "gui4",
+    "琼": "qiong2", "渝": "yu2", "川": "chuan1", "贵": "gui4", "云": "yun2",
+    "藏": "zang4", "陕": "shan3", "甘": "gan1", "青": "qing1", "宁": "ning2",
+    "新": "xin1",
+}
+
+
+def _toneless(py: str) -> str:
+    return py.rstrip("0123456789")
+
+
+def _unique_pinyin_index(keyfn):
+    """{键: 省份}，只保留唯一命中的键；多省共享的键（歧义）丢弃，从根上杜绝错猜。"""
+    first, dup = {}, set()
+    for prov, py in _PROVINCE_PINYIN.items():
+        k = keyfn(py)
+        if k in first:
+            dup.add(k)
+        else:
+            first[k] = prov
+    return {k: v for k, v in first.items() if k not in dup}
+
+
+# 带声调唯一索引（分得清 京 jing1 / 津 jin1 / 晋 jin4）；无声调唯一索引（容忍 STT 听错声调）。
+_TONE_TO_PROVINCE = _unique_pinyin_index(lambda py: py)
+_TONELESS_TO_PROVINCE = _unique_pinyin_index(_toneless)
+
+
+def _province_by_pinyin(ch: str):
+    """非省份首字 → 按拼音纠回唯一命中的省；歧义或无命中返回 None（绝不猜）。
+
+    先比带声调（区分 津/晋），不中再比无声调（容忍 STT 把 hù 听成 hú）。
+    """
+    got = pinyin(ch, style=Style.TONE3, heteronym=False, errors="ignore")
+    if not got or not got[0] or not got[0][0]:
+        return None
+    py = got[0][0]
+    return _TONE_TO_PROVINCE.get(py) or _TONELESS_TO_PROVINCE.get(_toneless(py))
+
+
 # 省份之后的部分：城市字母码(1 位 A-Z) + 4~6 位字母数字。
 # 覆盖标准 7 位车牌（省+字母+5）与新能源 8 位车牌（省+字母+6）；从宽到 4，避免误杀。
 _REST_RE = re.compile(r"^[A-Z][A-Z0-9]{4,6}$")
@@ -124,7 +175,10 @@ def clean_plate(raw: str) -> str:
         return ""
     province, rest = s[0], s[1:]
     if province not in PROVINCE_ABBR:
-        province = _PROVINCE_CONFUSABLE.get(province, province)
+        # 手工近音表（含形近/多音字）→ 拼音兜底（仅唯一命中）→ 都不中就保留原样交给校验/重说。
+        province = (_PROVINCE_CONFUSABLE.get(province)
+                    or _province_by_pinyin(province)
+                    or province)
     return province + rest
 
 
