@@ -12,7 +12,7 @@
   - 微信内置浏览器用不了麦克风，页面会引导「右上角 → 在浏览器打开」，用系统 Chrome/Safari。
 - **门卫查询后台**：`/guard`，自然语言问「今天来了几辆车 / 最近 7 天哪家公司最多 / 本月事由分布」。
 
-<img src="./1.png" alt="门卫智能体" width="40%">  <img src="./QR_code.png" alt="二维码" width="40%">
+<img src="./1.png" alt="门卫智能体" width="40%">  <img src="./QR_code.png" alt="二维码" width="50%">
 
 ## 核心功能
 
@@ -52,6 +52,8 @@ FastAPI 后端 ── AWS ECS Express（Fargate + ALB + HTTPS，固定地址）
 
 CI/CD: GitHub Actions → 测试（SQLite + Postgres）→ 构建镜像推 ECR → 部署 ECS Express
 ```
+
+<img src="./voice_agent_physical architecture.drawio.png" alt="门卫智能体" width="50%">
 
 ## 技术栈
 
