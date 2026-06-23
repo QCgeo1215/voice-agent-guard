@@ -53,7 +53,7 @@ FastAPI 后端 ── AWS ECS Express（Fargate + ALB + HTTPS，固定地址）
 CI/CD: GitHub Actions → 测试（SQLite + Postgres）→ 构建镜像推 ECR → 部署 ECS Express
 ```
 
-<img src="./Architecture.png" alt="物理架构" width="50%">
+<img src="./Architecture.png" alt="物理架构" width="100%">
 
 ## 技术栈
 
